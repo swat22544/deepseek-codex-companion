@@ -10,14 +10,25 @@
   "input": "已知现象、预期行为和必要任务背景。",
   "feedback": "可选：主代理对上一轮候选的纠正和本轮要求。",
   "files": ["D:/project/src/retry.ts", "D:/project/test/retry.test.ts"],
-  "timeoutMs": 300000,
+  "taskSize": "auto",
   "maxToolCalls": 24
 }
 ```
 
 `taskType`：`extract`、`classify`、`format`、`draft`、`analyze`、`review`、`debug`、`plan`、`implement`、`test-design`。它描述工作类型，权限仅由 `mode` 决定。`implement` 产生候选实现，不能直接修改项目。
 
-`instruction` 与 `input` 必填字符串；`feedback` 可选。三者合计上限 96 KB。超时默认文本 120 秒、其他模式 300 秒，可显式设置 1–600 秒；退出清理最多额外等待约 7 秒，未确认清理会报告失败。工具调用默认 24 次，最多 80 次。预算用尽后由主代理收尾或重新拆分，不让辅助代理延长自身预算。
+`instruction` 与 `input` 必填字符串；`feedback` 可选。三者合计上限 96 KB。工具调用默认 24 次，最多 80 次。预算用尽后由主代理收尾或重新拆分，不让辅助代理延长自身预算。
+
+时间预算字段均可省略，由运行器在文件快照准备完成后计算：
+
+| 字段 | 含义 |
+| --- | --- |
+| `taskSize` | 默认 `auto`；可显式选择 `small`、`medium`、`large` |
+| `totalTimeoutMs` | 显式总时限，1000–3600000 毫秒的安全整数；最多 60 分钟 |
+| `idleTimeoutMs` | 显式无进展时限，同范围，且不得超过最终总时限 |
+| `timeoutMs` | 兼容旧请求的显式总时限，仍然有效；与 `totalTimeoutMs` 同时填写时必须相等 |
+
+默认小/中/大任务的总时限分别为 5/15/30 分钟，无进展时限分别为 3/7/10 分钟。自动无进展时限取默认值与最终总时限的较小者；显式无进展时限超过总时限则拒绝请求，不静默缩短。`null`、字符串、非有限数值、非整数与相互矛盾的设置都无效。自动分档、起算点、进展认定、长任务示例和旧请求迁移见 [timeouts.md](timeouts.md)。退出清理最多额外等待约 7 秒，未确认清理会报告失败。
 
 `files` 仅用于 `inspect/propose`，是主代理明确选择的绝对文件路径列表，最多 80 个、每个 256 KiB、合计 2 MiB。仅接收 UTF-8 文本，排除二进制、目录、文件符号链接和常见凭据文件名。并非所有允许大小的文件都适合一次提供；优先选择与问题直接相关的最少材料。
 
@@ -34,7 +45,7 @@
 
 结果是待核验候选；调用完成、格式符合要求和内容可采用应分别判断。分项方法见 [verification.md](verification.md)，可选机械检查命令及 JSON 契约见 [verification-contract.md](verification-contract.md)。契约文件仅供主代理本地检查，不是运行器请求中的新字段，也不必把独立答案交给模型。
 
-结果 JSON 保留旧字段 `ok/trust/verificationRequired/modelSelection/sessionId/final`，增加 `mode`、`modelRequests`、`toolCalls`、`toolResults`、`toolAudit`、`cleanup`、`runDirectory`、`snapshots` 和 `artifacts`。
+结果 JSON 保留旧字段 `ok/trust/verificationRequired/modelSelection/sessionId/final`，另含 `mode`、`modelRequests`、`toolCalls`、`toolResults`、`toolAudit`、`cleanup`、`runDirectory`、`snapshots` 和 `artifacts`。新版增加 `timing`（已解析预算、规模依据与进展计时）和 `timeout`（未触发为 `null`，触发时含 `kind: "total" | "idle"`、限值和经过时间）；旧记录缺少这两个字段不代表损坏。
 
 `snapshots` 含原始路径和哈希，便于主代理判断候选所依据的版本；模型工具只按 ID 访问其内容。`artifacts` 含候选文件绝对路径、大小与哈希。失败调用的部分输出和文件也可能存在，不能作为完成结果直接使用。
 

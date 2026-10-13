@@ -45,3 +45,20 @@ export function projectReplyStream(sessionId, frame) {
   }
   return [];
 }
+
+/**
+ * Project progress metadata only. DSH StreamChunk explicitly defines text-delta
+ * and reasoning-delta as { type, index, text }. Inspect the discriminator before
+ * the text field, and return only a count; hidden content never crosses this API.
+ */
+export function projectStreamProgress(sessionId, frame) {
+  if (!identity(sessionId) || !record(frame) || !identity(frame.attemptId) || !integer(frame.revision, 1)) return [];
+  if (frame.type === 'start' || frame.type === 'end') return projectReplyStream(sessionId, frame);
+  if (frame.type !== 'chunk') return [];
+  const chunk = frame.chunk;
+  if (!record(chunk) || !['text-delta', 'reasoning-delta'].includes(chunk.type)) return [];
+  if (!integer(frame.index) || !integer(frame.time) || !integer(chunk.index) || typeof chunk.text !== 'string' || chunk.text.length === 0) return [];
+  return [{type:'output_delta', sessionId, attemptId:frame.attemptId, revision:frame.revision,
+    index:frame.index, blockIndex:chunk.index, time:frame.time,
+    deltaKind:chunk.type === 'text-delta' ? 'text' : 'reasoning', charCount:chunk.text.length}];
+}

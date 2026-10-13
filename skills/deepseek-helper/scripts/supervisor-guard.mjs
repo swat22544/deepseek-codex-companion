@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { MODEL, createToolRuntime } from './helper-policy.mjs';
-import { projectReplyStream } from './reply-stream.mjs';
+import { projectReplyStream, projectStreamProgress } from './reply-stream.mjs';
 
 export const name = 'codex-supervisor-guard';
 export const inject = ['tools', 'llm'];
@@ -42,6 +42,7 @@ export function apply(ctx) {
   ctx.on('agent/created', ({agent}) => agent.ctx.tools.restrict({allow:runtime.allowed}));
   ctx.on('agent/assistant-stream', ({agent,frame}) => {
     for (const event of projectReplyStream(agent?.id, frame)) emit('reply_stream', event);
+    for (const event of projectStreamProgress(agent?.id, frame)) emit('progress_stream', event);
   });
   ctx.on('system-prompt/assemble', async (_assembly,_context,next) => {
     const assembled = await next();

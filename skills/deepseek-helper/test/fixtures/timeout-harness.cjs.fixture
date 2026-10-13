@@ -1,0 +1,23 @@
+// Local protocol simulator for runner tests. No model or network access.
+const fs=require('node:fs');
+const policy=JSON.parse(fs.readFileSync(process.env.CODEX_HELPER_POLICY,'utf8'));
+const emit=value=>process.stdout.write(JSON.stringify(value)+'\n');
+const control=value=>process.stderr.write('CODEX_HELPER_CONTROL '+JSON.stringify({nonce:policy.nonce,...value})+'\n');
+const scenario=process.env.HELPER_TEST_SCENARIO;
+process.stdin.resume();
+emit({type:'session',sessionId:'fixture-session'});
+emit({type:'status',phase:'turn_start',turn:1});
+control({event:'active',version:2,mode:policy.mode,allowedTools:[]});
+control({event:'model',provider:'deepseek-official',model:scenario==='wrong-model'?'unexpected':'deepseek-flash',reasoningEffort:'max'});
+control({event:'progress_stream',type:'start',sessionId:'fixture-session',attemptId:'fixture-session:1',revision:1,turn:1,step:1});
+if(scenario==='success') {
+  emit({type:'status',phase:'turn_end',turn:1,reason:{kind:'completed'}});
+  emit({type:'final',text:JSON.stringify({deadline:policy.deadline})});
+  process.stdin.on('end',()=>process.exit(0));
+} else {
+  let index=0;
+  setInterval(()=>{
+    index++;
+    control({event:'progress_stream',type:'output_delta',sessionId:'fixture-session',attemptId:'fixture-session:1',revision:index+1,index,blockIndex:0,time:Date.now(),deltaKind:'reasoning',charCount:scenario==='total'?1:0});
+  },150);
+}

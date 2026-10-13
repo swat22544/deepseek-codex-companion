@@ -1,6 +1,7 @@
 import { readFile, lstat, realpath, mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { validateTimeoutOptions } from './timeout-policy.mjs';
 
 export const MODEL = Object.freeze({ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' });
 export const MODES = new Set(['text', 'inspect', 'propose']);
@@ -15,14 +16,13 @@ export function validateRequest(request) {
   if (!MODES.has(mode)) throw new Error('mode must be text, inspect, or propose.');
   const feedback = request.feedback ?? '';
   if (typeof feedback !== 'string' || Buffer.byteLength(request.instruction + request.input + feedback) > 96000) throw new Error('Task text and feedback must fit within 96 KB.');
-  const timeoutMs = request.timeoutMs ?? (mode === 'text' ? 120000 : 300000);
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 600000) throw new Error('timeoutMs must be 1000–600000.');
+  validateTimeoutOptions(request);
   const maxToolCalls = request.maxToolCalls ?? 24;
   if (!Number.isInteger(maxToolCalls) || maxToolCalls < 1 || maxToolCalls > 80) throw new Error('maxToolCalls must be 1–80.');
   const files = request.files ?? [];
   if (!Array.isArray(files) || files.length > 80 || files.some(p => typeof p !== 'string' || !isAbsolute(p))) throw new Error('files must contain at most 80 absolute file paths.');
   if (mode === 'text' && files.length) throw new Error('Use inspect or propose mode to supply files.');
-  return { ...request, mode, feedback, timeoutMs, maxToolCalls, files };
+  return { ...request, mode, feedback, maxToolCalls, files };
 }
 
 function sensitivePath(path) {

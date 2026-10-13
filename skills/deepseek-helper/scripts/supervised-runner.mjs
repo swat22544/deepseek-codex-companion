@@ -7,9 +7,24 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MODEL, TOOL_NAMES, validateRequest, snapshotFiles, publicManifest, hash } from './helper-policy.mjs';
 import { createMonitor } from './live-monitor.mjs';
 import { resolveRuntimePaths } from './runtime-paths.mjs';
+import { resolveTimeoutPolicy, createProgressClock } from './timeout-policy.mjs';
+import { createStreamProgressTracker } from './progress-tracker.mjs';
 
 const here=dirname(fileURLToPath(import.meta.url));
 const profileName='codex-helper';
+
+// Used both by the watchdog and the final close settlement. A process can close
+// after its deadline but before the next watchdog tick; finalization must reject
+// that late completion without attempting to kill an already closed process.
+export function evaluateDeadline(clock) {
+  const timeout=clock.expired();
+  if(!timeout)return {failure:null,timeout:null};
+  const minutes=(timeout.limitMs/60000).toLocaleString('zh-CN',{maximumFractionDigits:2});
+  const failure=timeout.kind==='total'
+    ?`已达到本次分配的 ${minutes} 分钟总任务时限，任务已终止。`
+    :`连续 ${minutes} 分钟未收到可确认的模型或工具进展，任务已终止；这不等同于确认连接失败。`;
+  return {failure,timeout};
+}
 
 async function ensureProfile(dshHome) {
   const dir=join(dshHome,'profiles',profileName);
@@ -46,14 +61,16 @@ async function runDelegate(raw,monitor) {
   const request=validateRequest(raw);
   const {installation,executable,entrypoint,dshHome}=resolveRuntimePaths();
   if(!existsSync(executable))throw new Error(`DeepSeek Harness is missing at ${installation}`);
-  const files=await snapshotFiles(request.files),profile=await ensureProfile(dshHome);
+  const files=await snapshotFiles(request.files),timeoutPolicy=resolveTimeoutPolicy(request,files),profile=await ensureProfile(dshHome);
   const workRoot=resolve(process.cwd(),'work','deepseek-runs');
   await mkdir(workRoot,{recursive:true});
   const cwd=await mkdtemp(join(workRoot,'task-')),artifactDir=join(cwd,'artifacts');
   await mkdir(artifactDir);
-  const start=Date.now(),nonce=randomUUID(),policyPath=join(cwd,'policy.json');
+  const start=Date.now(),clock=createProgressClock(timeoutPolicy),nonce=randomUUID(),policyPath=join(cwd,'policy.json');
+  const timing=()=>({...timeoutPolicy,...clock.snapshot()});
+  monitor.timing(timing());
   const allowedTools=request.mode==='text'?[]:TOOL_NAMES.slice(0,request.mode==='propose'?4:3);
-  await writeFile(policyPath,JSON.stringify({mode:request.mode,files,artifactDir,maxToolCalls:request.maxToolCalls,deadline:start+request.timeoutMs,nonce}));
+  await writeFile(policyPath,JSON.stringify({mode:request.mode,files,artifactDir,maxToolCalls:request.maxToolCalls,deadline:start+timeoutPolicy.totalTimeoutMs,nonce}));
   const template=await readFile(join(here,'supervised.patch.template.yml'),'utf8');
   if(!template.includes('__GUARD_MODULE_URL__'))throw new Error('Invalid supervised policy template.');
   const patch=join(cwd,'invocation.patch.yml');
@@ -69,20 +86,22 @@ async function runDelegate(raw,monitor) {
     'For review/debug tasks, cite file ID and line numbers, distinguish observations from hypotheses, and suggest concrete independent checks. Return findings and requested deliverables, not private reasoning.',
     JSON.stringify({taskType:request.taskType,instruction:request.instruction,input:request.input,feedback:request.feedback,files:publicManifest(files)}),
   ].join('\n');
-  let failure=null,child,stdout='',stderrBuffer='',outputBytes=0,policyActive=false,modelRequests=0,modelSelection=null,sessionId=null,final=null,stopReason=null;
+  let failure=null,timeout=null,child,stdout='',stderrBuffer='',outputBytes=0,policyActive=false,modelRequests=0,modelSelection=null,sessionId=null,final=null,stopReason=null;
   let closed=false,terminationRequested=false,killConfirmed=false,killFinished=false,childExitCode=null,cleanupTimer;
   const calls=new Map(),toolResults=[],audits=[];
+  const progress=createStreamProgressTracker(kind=>clock.markProgress(kind));
   let turn=null,ended=false;
   const result=await new Promise(done=>{
     let settled=false;
     const cancel=()=>fail('Task cancelled by supervisor.');
     function finish(exitCode,cleanupIncomplete=false) {
-      if(settled)return;settled=true;clearTimeout(timer);clearTimeout(cleanupTimer);
+      if(settled)return;settled=true;clearInterval(timer);clearTimeout(cleanupTimer);
+      if(!failure)({failure,timeout}=evaluateDeadline(clock));
       process.off('SIGINT',cancel);process.off('SIGTERM',cancel);
       const complete=!!sessionId&&typeof final?.text==='string'&&!!final.text.trim()&&Number.isInteger(turn)&&ended&&stopReason?.kind==='completed'&&[...calls.keys()].every(id=>toolResults.some(r=>r.callId===id));
       const verified=modelRequests>0;
       const ok=exitCode===0&&!failure&&!cleanupIncomplete&&complete&&policyActive&&verified;
-      done({ok,trust:'unverified_candidate',verificationRequired:true,taskType:request.taskType,mode:request.mode,elapsedMs:Date.now()-start,exitCode,policyActive,modelSelectionVerified:verified,modelSelection,modelRequests,sessionId,stopReason,final,toolCalls:[...calls.values()],toolResults,toolAudit:audits,cleanup:{requested:terminationRequested,treeKillConfirmed:killConfirmed,incomplete:cleanupIncomplete},error:failure??(!policyActive?'Supervisor guard did not confirm activation.':!verified?'Flash / Max was not verified.':!complete?'Harness did not complete a single delegated turn.':exitCode!==0?'Harness failed; check application login/configuration.':null)});
+      done({ok,trust:'unverified_candidate',verificationRequired:true,taskType:request.taskType,mode:request.mode,elapsedMs:Date.now()-start,timing:timing(),timeout,exitCode,policyActive,modelSelectionVerified:verified,modelSelection,modelRequests,sessionId,stopReason,final,toolCalls:[...calls.values()],toolResults,toolAudit:audits,cleanup:{requested:terminationRequested,treeKillConfirmed:killConfirmed,incomplete:cleanupIncomplete},error:failure??(!policyActive?'Supervisor guard did not confirm activation.':!verified?'Flash / Max was not verified.':!complete?'Harness did not complete a single delegated turn.':exitCode!==0?'Harness failed; check application login/configuration.':null)});
     }
     function terminate() {
       if(terminationRequested)return;terminationRequested=true;
@@ -98,55 +117,74 @@ async function runDelegate(raw,monitor) {
     }
     function maybeFinish(){if(closed&&(!terminationRequested||killFinished))finish(childExitCode,terminationRequested&&!killConfirmed);}
     function fail(message){failure??=message;terminate();}
+    function checkDeadline() {
+      if(failure||settled)return;
+      const expired=evaluateDeadline(clock);
+      if(!expired.timeout)return;
+      timeout=expired.timeout;fail(expired.failure);
+    }
     function consume(line) {
+      checkDeadline();if(failure)return;
       if(!line.trim())return;
       let event;try{event=JSON.parse(line);}catch{fail('Non-JSON output from Harness.');return;}
       if(!event||typeof event!=='object'||Array.isArray(event)||typeof event.type!=='string'){fail('Malformed Harness event envelope.');return;}
       if(event.type==='session'){
         if(typeof event.sessionId!=='string'||!event.sessionId||(sessionId&&event.sessionId!==sessionId)){fail('Unexpected or malformed session.');return;}
-        sessionId=event.sessionId;
+        sessionId=event.sessionId;progress.setSession(sessionId);
       }
       if(event.type==='status'&&event.phase==='turn_start'){
         if(!sessionId||turn!==null||ended||!Number.isInteger(event.turn)||event.turn<1){fail('Unexpected or malformed delegated turn.');return;}
-        turn=event.turn;
+        turn=event.turn;progress.setTurn(turn);
       }
       if(event.type==='status'&&event.phase==='turn_end'){
         if(turn===null||ended||event.turn!==turn||!event.reason||typeof event.reason.kind!=='string'){fail('Mismatched turn completion.');return;}
         ended=true;stopReason=event.reason;
       }
       if(event.type==='final'){
-        if(final||typeof event.text!=='string'){fail('Unexpected or malformed final response.');return;}
+        if(final||turn===null||typeof event.text!=='string'){fail('Unexpected or malformed final response.');return;}
         final={type:'final',text:event.text};
+        if(event.text.trim())clock.markProgress('final');
       }
       if(event.type==='error')fail('Harness reported an error.');
       if(event.type==='tool_call') {
         if(turn===null||ended||!allowedTools.includes(event.tool)||typeof event.callId!=='string'||!event.callId||calls.has(event.callId)){fail('Unauthorized or malformed tool call.');return;}
         calls.set(event.callId,{callId:event.callId,tool:event.tool});
-        if(calls.size>request.maxToolCalls)fail('Tool-call budget exceeded.');
+        if(calls.size>request.maxToolCalls){fail('Tool-call budget exceeded.');return;}
+        clock.markProgress('tool_start');
       }
       if(event.type==='tool_result') {
         if(!calls.has(event.callId)||toolResults.some(r=>r.callId===event.callId)||!['completed','error'].includes(event.status)){fail('Unmatched or malformed tool result.');return;}
         toolResults.push({callId:event.callId,status:event.status});
+        clock.markProgress('tool_completed');
       }
       monitor.harness(event);
       // Do not retain private reasoning, tool arguments, or tool content in the result.
     }
     function control(line) {
+      checkDeadline();if(failure)return;
       const prefix='CODEX_HELPER_CONTROL ';
       if(!line.startsWith(prefix))return;
       let data;try{data=JSON.parse(line.slice(prefix.length));}catch{fail('Malformed helper control message.');return;}
       if(!data||typeof data!=='object'||Array.isArray(data)){fail('Malformed helper control envelope.');return;}
       if(data.nonce!==nonce){fail('Unmatched helper control nonce.');return;}
       if(data.event==='active') {
-        if(data.version!==2||data.mode!==request.mode||JSON.stringify(data.allowedTools)!==JSON.stringify(allowedTools))fail('Guard policy mismatch.');
+        if(data.version!==2||data.mode!==request.mode||JSON.stringify(data.allowedTools)!==JSON.stringify(allowedTools)){fail('Guard policy mismatch.');return;}
         else policyActive=true;
       }
-      if(data.event==='model'){if(Object.keys(MODEL).some(k=>data[k]!==MODEL[k]))fail('Unexpected model selection.');else{modelRequests++;modelSelection=MODEL;}}
-      if(data.event==='violation')fail('Supervisor policy violation.');
+      if(data.event==='model'){
+        if(!policyActive||Object.keys(MODEL).some(k=>data[k]!==MODEL[k])){fail('Unexpected model selection.');return;}
+        modelRequests++;modelSelection=MODEL;clock.markProgress('model_start');
+      }
+      if(data.event==='progress_stream'&&policyActive&&modelRequests>0)progress.accept(data);
+      if(data.event==='violation'){fail('Supervisor policy violation.');return;}
       if(data.event==='tool')audits.push({tool:data.tool});
       monitor.control(data);
     }
-    const timer=setTimeout(()=>fail('Task timed out.'),request.timeoutMs);
+    let lastTimingUpdate=0;
+    const timer=setInterval(()=>{
+      checkDeadline();
+      if(Date.now()-lastTimingUpdate>=1000){lastTimingUpdate=Date.now();monitor.timing(timing());}
+    },250);
     process.on('SIGINT',cancel);process.on('SIGTERM',cancel);
     child=spawn(executable,['--expose-internals',entrypoint,'--profile',profileName,'--patch',patch,'--json','-'],{cwd,windowsHide:true,shell:false,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',DSH_PERMISSION_MODE:'read-only',DSH_TOOLS_MODE:'native',CODEX_HELPER_POLICY:policyPath},stdio:['pipe','pipe','pipe']});
     child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');

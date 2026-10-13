@@ -2,7 +2,7 @@
 name: deepseek-helper
 description: 按需通过本机 DeepSeek Harness 协作进行局部分析、代码审查、故障定位、方案比较、测试设计和候选实现。支持指定文件快照、隔离候选文件与反馈续作；主代理控制范围，并分别核验代码、解释、引用、边界示例和测试预期。
 metadata:
-  revision: "2026-10-13-verification"
+  revision: "2026-10-13-adaptive-timeouts"
 ---
 
 # DeepSeek 受控协作
@@ -50,6 +50,14 @@ node "<本技能目录>/scripts/delegate.mjs" "绝对路径/request.json" "绝�
 
 固定 **DeepSeek-V41-Flash / Max**，每个实际模型请求均核对 `deepseek-official / deepseek-flash / max`。不静默换模型、降级推理等级或绕过权限校验。已有运行器的 profile、超时、输出限额与清理保护必须保留。
 
+## 按任务规模分配时间
+
+默认让运行器根据模式、输入字节和实际文件快照自动分档；不要习惯性给所有请求填写 `timeoutMs: 180000`。小、中、大任务的 **总时限 / 无进展时限** 分别为 **5 / 3、15 / 7、30 / 10 分钟**。规模只是预算启发式，主代理可用 `taskSize` 显式选择档位，或分别指定 `totalTimeoutMs`、`idleTimeoutMs`；显式时限最多 60 分钟，无进展时限不得超过总时限。
+
+总预算在快照与 profile 准备完成、启动 Harness 子进程前开始，始终不会因进展而延长。只有校验后的模型开始、有效输出活动（包括不含私有文本的推理活动元数据）、工具开始/完成和最终回复会更新进展时间；监看心跳、界面刷新和无效事件不续期。模型可能在没有可观察事件时继续推理，无进展超时不能证明断网或卡死。
+
+旧 `timeoutMs` 仍是显式总时限；旧请求写三分钟就仍会在三分钟停止。要使用自动预算，应在新请求中去掉该字段，保留归档原件。较大或长推理任务首次调用前读 [时间预算、进展与超时处理](references/timeouts.md)，按实际范围选择时限，不由辅助代理自行延长。
+
 ## 分开核验，再决定采用
 
 **候选代码、解释文字、源码引用、边界示例和测试预期分别核验；不能因主要结论正确，就默认附加内容正确。** 检查影响结论或采用行为的实质性内容，不把每次委派扩张成无关审计。
@@ -66,10 +74,10 @@ node "<本技能目录>/scripts/delegate.mjs" "绝对路径/request.json" "绝�
 
 格式问题先保留原始回复并判为未遵约；主代理若能确定性修复，应另存派生结果、注明修复后再核验，不暗中删文字或抽取片段后宣称原始交付合格。确定性脚本能直接完成的内容，不为让模型“补考通过”而重复调用。
 
-超时、登录、额度或策略失败先诊断；只有原因已修复、任务已拆分或范围明确调整时才再调用。连续无进展、无法独立核验、所需权限超出范围时由主代理接手，不无限重试或放宽限制。`cleanup.incomplete=true` 时先处理残留进程，再开展后续调用。
+超时先读取 `result.timeout.kind`，区分总预算耗尽与没有可确认进展，并查看 `result.timing`、已有候选及清理状态。登录、额度或策略失败也先诊断；只有原因已修复、预算经主代理重新评估、任务已拆分或范围明确调整时才发起新调用。连续无进展、无法独立核验、所需权限超出范围时由主代理接手，不无限重试或放宽权限。`cleanup.incomplete=true` 时先处理残留进程，再开展后续调用。
 
 监看只展示公开回复与筛选后的活动，不能作为完成或正确性的唯一依据。若 `result.monitor.available=false`、心跳中断或界面仍显示运行中，先读取本次结果 JSON 和进程状态；模型已完成就继续核验，不因监看失效重复模型请求。说明可见性问题，保留 `result.monitor.path` 便于诊断，不分享带令牌的监看 URL。
 
 ## 维护入口
 
-运行入口：[scripts/delegate.mjs](scripts/delegate.mjs)。权限与执行由 `supervised-runner.mjs`、`helper-policy.mjs`、`supervisor-guard.mjs` 和 `supervised.patch.template.yml` 共同实现。修改行为后验证对应不变量；不要让 DeepSeek 修改自身技能、工具范围或权限。主代理保留维护和验收职责。
+运行入口：[scripts/delegate.mjs](scripts/delegate.mjs)。权限与执行由 `supervised-runner.mjs`、`helper-policy.mjs`、`supervisor-guard.mjs` 和 `supervised.patch.template.yml` 共同实现；预算由 `timeout-policy.mjs` 计算，输出进展由 `progress-tracker.mjs` 校验。修改行为后验证对应不变量；不要让 DeepSeek 修改自身技能、工具范围或权限。主代理保留维护和验收职责。

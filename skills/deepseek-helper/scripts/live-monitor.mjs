@@ -3,15 +3,38 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {resolveCodexHome} from './runtime-paths.mjs';
 
+function safeTiming(value) {
+  if(!value||typeof value!=='object'||Array.isArray(value))return null;
+  const out={};
+  for(const key of ['totalTimeoutMs','idleTimeoutMs','inputBytes','fileCount','snapshotBytes','totalElapsedMs','idleElapsedMs','totalRemainingMs','idleRemainingMs'])
+    if(typeof value[key]==='number'&&Number.isFinite(value[key])&&value[key]>=0)out[key]=value[key];
+  if(['small','medium','large'].includes(value.taskSize))out.taskSize=value.taskSize;
+  for(const key of ['sizeSource','totalSource','idleSource'])if(['auto','explicit'].includes(value[key]))out[key]=value[key];
+  if(value.lastProgressKind===null||['start','model_start','model_output','tool_start','tool_completed','final'].includes(value.lastProgressKind))out.lastProgressKind=value.lastProgressKind;
+  return Object.keys(out).length?out:null;
+}
+function safeTimeout(value) {
+  if(!value||typeof value!=='object'||!['total','idle'].includes(value.kind))return null;
+  const out={kind:value.kind};
+  for(const key of ['limitMs','elapsedMs','totalElapsedMs','idleElapsedMs'])
+    if(typeof value[key]==='number'&&Number.isFinite(value[key])&&value[key]>=0)out[key]=value[key];
+  return out;
+}
+
 // Only public answer text and allowlisted activity metadata are persisted.
 export async function createMonitor(request, {directory}={}) {
   const dir=directory??join(resolveCodexHome(),'deepseek-monitor','runs');
   const id=randomUUID(),start=Date.now(),path=join(dir,id+'.json');
   const title=String(request?.title??request?.instruction??'DeepSeek task').split(/[\n。]/,1)[0].replace(/\s+/g,' ').slice(0,100);
-  const state={version:1,id,title,taskType:request?.taskType,mode:request?.mode??'text',status:'preparing',startedAt:new Date(start).toISOString(),updatedAt:new Date(start).toISOString(),elapsedMs:0,model:{model:'deepseek-flash',reasoningEffort:'max'},policyActive:false,modelSelectionVerified:false,reply:'',draft:'',events:[],artifacts:[],error:null,done:false};
+  const state={version:1,id,title,taskType:request?.taskType,mode:request?.mode??'text',status:'preparing',startedAt:new Date(start).toISOString(),updatedAt:new Date(start).toISOString(),elapsedMs:0,model:{model:'deepseek-flash',reasoningEffort:'max'},policyActive:false,modelSelectionVerified:false,reply:'',draft:'',events:[],artifacts:[],error:null,timing:null,timeout:null,done:false};
   let disabled=false,dirty=true,seq=0,attempt=null,blocks=new Map(),chain=Promise.resolve(),timer,finalSeen=false;
   const cap=1024*1024;
   function activity(kind,label,fields={}) {state.events.push({seq:++seq,at:new Date().toISOString(),kind,label,...fields});if(state.events.length>400)state.events.shift();dirty=true;}
+  function timing(value) {
+    const next=safeTiming(value);if(!next)return;
+    const first=state.timing===null;state.timing=next;dirty=true;
+    if(first)activity('budget','任务时间预算已分配');
+  }
   function flush() {
     if(disabled||!dirty)return chain;dirty=false;state.updatedAt=new Date().toISOString();state.elapsedMs=Date.now()-start;
     const content=JSON.stringify(state),temp=path+'.tmp';
@@ -22,7 +45,7 @@ export async function createMonitor(request, {directory}={}) {
   timer=setInterval(()=>{dirty=true;void flush();},750);timer.unref();
   return {
     id,path,
-    activity,
+    activity,timing,
     harness(event){
       if(event.type==='session'){state.status='running';activity('session','DeepSeek 已启动');}
       if(event.type==='status'&&event.phase==='step_start')activity('step','开始处理步骤',{step:event.step});
@@ -49,10 +72,11 @@ export async function createMonitor(request, {directory}={}) {
     },
     async finish(result){
       clearInterval(timer);state.done=true;state.status=result.ok?'completed':'failed';state.error=result.error??null;
+      timing(result.timing);state.timeout=safeTimeout(result.timeout);
       state.policyActive=!!result.policyActive;state.modelSelectionVerified=!!result.modelSelectionVerified;
       if(typeof result.final?.text==='string')state.reply=result.final.text.slice(0,cap);
       state.draft='';state.artifacts=(result.artifacts??[]).map(({name,bytes,sha256})=>({name,bytes,sha256}));
-      activity('finish',result.ok?'回复完成，待主代理复核':'调用未完成');dirty=true;await flush();
+      activity('finish',result.ok?'回复完成，待主代理复核':state.timeout?.kind==='total'?'已达到总任务时限':state.timeout?.kind==='idle'?'已达到无进展时限':'调用未完成');dirty=true;await flush();
       return {runId:id,path,available:!disabled};
     }
   };

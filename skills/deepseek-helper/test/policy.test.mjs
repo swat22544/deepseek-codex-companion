@@ -15,7 +15,8 @@ const snapshots=await snapshotFiles([file]);
 const policy=mode=>({mode,files:snapshots,maxToolCalls:80,deadline:Date.now()+60000,artifactDir:join(dir,mode)});
 test('request backwards compatibility and finite budgets',()=>{
  assert.equal(validateRequest({taskType:'extract',instruction:'x',input:''}).mode,'text');
- assert.throws(()=>validateRequest({taskType:'review',instruction:'x',input:'',timeoutMs:600001}));
+ assert.equal(validateRequest({taskType:'review',instruction:'x',input:'',timeoutMs:1800000}).timeoutMs,1800000);
+ assert.throws(()=>validateRequest({taskType:'review',instruction:'x',input:'',timeoutMs:3600001}));
  assert.throws(()=>validateRequest({taskType:'review',instruction:'x',input:'',mode:'inspect',files:['../x']}));
 });
 test('snapshots immutable and reads/search bounded',async()=>{
