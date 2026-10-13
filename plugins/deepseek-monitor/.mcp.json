@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "deepseek-monitor": {
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/server/mcp.mjs"
+      ],
+      "cwd": "${PLUGIN_ROOT}"
+    }
+  }
+}

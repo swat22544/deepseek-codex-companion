@@ -1,0 +1,8 @@
+{
+  "title":"提取工单编号",
+  "taskType":"extract",
+  "mode":"text",
+  "instruction":"从给定文本中提取 TASK- 开头的工单编号，去重并按字典序排序。只返回 JSON 字符串数组。",
+  "input":"TASK-9 已完成；TASK-2 待处理；TASK-9 重复；忽略 NOTE-8。",
+  "timeoutMs":120000
+}

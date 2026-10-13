@@ -1,0 +1,84 @@
+# Invocation-local supervised helper. Native tools disabled; custom snapshot tools only.
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
+    reasoningEffort: max
+
+- id: tools
+  config:
+    mode: native
+
+- id: headless-runner
+  inject: [headlessStartup, codexSupervisorGuard]
+
+- insert:
+    - id: codex-supervisor-guard
+      name: __GUARD_MODULE_URL__
+
+- id: tool-plugin-manager
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-result-pruner
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: agent-instructions
+  disabled: true
+- id: skill
+  disabled: true
+- id: skill-filesystem
+  disabled: true
+- id: skill-badge
+  disabled: true
+- id: user-questions
+  disabled: true
+- id: plan-mode
+  disabled: true
+- id: session-title-llm
+  disabled: true
+- id: ptc-runtime
+  disabled: true
+- id: workflow-ptc
+  disabled: true
+- id: subagent-spawn-in-process
+  disabled: true
+- id: subagent-fork-in-process
+  disabled: true
+- id: goal-round-driver
+  disabled: true
+- id: command-goal
+  disabled: true
+- id: config-editor
+  disabled: true
+- id: settings
+  disabled: true
+- id: hmr
+  disabled: true

@@ -1,0 +1,9 @@
+{
+  "name":"deepseek-codex-companion",
+  "version":"1.0.1",
+  "private":true,
+  "description":"Supervised DeepSeek collaboration and a live monitor for Codex on Windows.",
+  "type":"module",
+  "engines":{"node":">=20"},
+  "scripts":{"test":"node --test","setup":"node scripts/install.mjs"}
+}

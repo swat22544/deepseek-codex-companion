@@ -1,0 +1,10 @@
+{
+  "name": "deepseek-codex-companion",
+  "interface": {"displayName":"DeepSeek Codex Companion"},
+  "plugins":[{
+    "name":"deepseek-monitor",
+    "source":{"source":"local","path":"./plugins/deepseek-monitor"},
+    "policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},
+    "category":"Productivity"
+  }]
+}

@@ -1,0 +1,20 @@
+# Local task data and credentials must never be published.
+node_modules/
+.env
+.env.*
+!.env.example
+work/
+outputs/
+dist/
+coverage/
+*.log
+*.tmp
+server.json
+policy.json
+helper.config.json
+invocation.patch.yml
+**/runs/
+**/artifacts/
+*.zip
+.DS_Store
+Thumbs.db
