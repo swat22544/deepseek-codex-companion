@@ -13,7 +13,7 @@ test('auto budgets classify small text, inspection, and proposal tasks', () => {
   for (const mode of ['inspect', 'propose']) {
     const policy = resolveTimeoutPolicy({ ...base, mode });
     assert.equal(policy.taskSize, 'medium');
-    assert.equal(policy.totalTimeoutMs, 15 * minute);
+    assert.equal(policy.totalTimeoutMs, 20 * minute);
     assert.equal(policy.idleTimeoutMs, 7 * minute);
   }
 });
@@ -31,7 +31,7 @@ test('byte and file thresholds are inclusive and count UTF-8 plus feedback', () 
   const large = resolveTimeoutPolicy(base, Array.from({ length: 8 }, () => ({ bytes: 1 })));
   assert.equal(large.taskSize, 'large');
   assert.equal(large.fileCount, 8);
-  assert.equal(large.totalTimeoutMs, 30 * minute);
+  assert.equal(large.totalTimeoutMs, 45 * minute);
   assert.equal(large.idleTimeoutMs, 10 * minute);
 });
 
@@ -46,6 +46,12 @@ test('explicit task size changes defaults while explicit timings and legacy alia
   assert.equal(explicit.idleTimeoutMs, 1200000);
   assert.equal(explicit.totalSource, 'explicit');
   assert.equal(explicit.idleSource, 'explicit');
+  for (const field of ['totalTimeoutMs', 'timeoutMs']) {
+    const shorter = resolveTimeoutPolicy({ ...request, [field]: 30 * minute });
+    assert.equal(shorter.totalTimeoutMs, 30 * minute);
+    assert.equal(shorter.totalSource, 'explicit');
+    assert.equal(shorter.idleTimeoutMs, 10 * minute);
+  }
   const legacy = resolveTimeoutPolicy({ ...base, timeoutMs: 1000, totalTimeoutMs: 1000 });
   assert.equal(legacy.totalTimeoutMs, 1000);
   assert.equal(legacy.idleTimeoutMs, 1000);
@@ -144,22 +150,22 @@ test('invalid clock budgets and nonfinite injected times are rejected', () => {
   for (const value of [NaN, Infinity, '0']) assert.throws(() => createProgressClock({ totalTimeoutMs: 1000, idleTimeoutMs: 1000 }, { now: () => value }));
 });
 
-test('a thirty-minute task progresses beyond ten minutes but still expires at its total budget', () => {
+test('a forty-five-minute task progresses beyond thirty minutes but still expires at its total budget', () => {
   let time = 0;
   const policy = resolveTimeoutPolicy({ ...base, taskSize: 'large' });
   const clock = createProgressClock(policy, { now: () => time });
-  for (let elapsedMinutes = 5; elapsedMinutes <= 25; elapsedMinutes += 5) {
+  for (let elapsedMinutes = 5; elapsedMinutes <= 40; elapsedMinutes += 5) {
     time = elapsedMinutes * minute;
     assert.equal(clock.expired(), null);
     assert.equal(clock.markProgress('model_output'), true);
-    assert.equal(clock.snapshot().totalRemainingMs, (30 - elapsedMinutes) * minute);
+    assert.equal(clock.snapshot().totalRemainingMs, (45 - elapsedMinutes) * minute);
     assert.equal(clock.snapshot().idleRemainingMs, 10 * minute);
   }
-  time = 30 * minute;
+  time = 45 * minute;
   const timeout = clock.expired();
   assert.equal(timeout.kind, 'total');
-  assert.equal(timeout.limitMs, 30 * minute);
-  assert.equal(timeout.elapsedMs, 30 * minute);
+  assert.equal(timeout.limitMs, 45 * minute);
+  assert.equal(timeout.elapsedMs, 45 * minute);
   assert.equal(timeout.idleElapsedMs, 5 * minute);
   assert.equal(clock.markProgress('model_output'), false);
 });

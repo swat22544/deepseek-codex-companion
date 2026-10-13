@@ -24,7 +24,7 @@ export async function startServer({root=dataRoot,port}={}){
     const actual=Buffer.from(req.headers.authorization??''),expected=Buffer.from('Bearer '+token);
     if(actual.length!==expected.length||!timingSafeEqual(actual,expected))return send(401,{error:'Monitor token required'});
     try {
-      if(path==='/api/health')return send(200,{ok:true,service:'deepseek-monitor',version:'1.0.3',pid:process.pid});
+      if(path==='/api/health')return send(200,{ok:true,service:'deepseek-monitor',version:'1.0.4',pid:process.pid});
       if(path==='/api/runs')return send(200,{runs:await listRuns(root)});
       const match=path.match(/^\/api\/runs\/([a-f0-9-]+)$/);if(match)return send(200,{run:await getRun(match[1],root)});
       send(404,{error:'Not found'});

@@ -121,6 +121,7 @@
     .inline-empty svg { width: 21px; height: 21px; color: var(--subtle); margin-bottom: 4px; }
     .inline-empty strong { font-weight: 500; color: var(--ink); }
     .run-error { border: 1px solid color-mix(in srgb, var(--danger) 20%, var(--line)); color: var(--danger); background: var(--danger-bg); padding: 13px 15px; margin-bottom: 24px; border-radius: 7px; line-height: 1.75; overflow-wrap: anywhere; font-size: 12px; }
+    .detail-head .run-error { margin: 12px 0 0; }
     .panel-caption { margin: 0 0 20px; color: var(--subtle); font-size: 11px; line-height: 1.7; }
     .events { list-style: none; padding: 0; margin: 0; }
     .event { display: grid; grid-template-columns: 52px 16px minmax(0, 1fr); column-gap: 10px; position: relative; padding-bottom: 22px; font-size: 12px; }
@@ -237,6 +238,7 @@
               <span class="metadata-item elapsed"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg><span id="task-elapsed"></span></span>
             </div>
             <div class="timing" id="task-timing" hidden><p id="task-budgets"></p><p class="timing-progress" id="task-progress"></p></div>
+            <div class="run-error" id="run-error" role="status" hidden></div>
           </header>
           <div class="detail-toolbar">
             <div class="tabs" role="tablist" aria-label="任务内容">
@@ -251,7 +253,6 @@
           </div>
           <div class="content" id="content" tabindex="0" aria-label="任务内容滚动区域">
             <div class="content-inner">
-              <div class="run-error" id="run-error" role="status" hidden></div>
               <section id="panel-reply" role="tabpanel" aria-labelledby="tab-reply">
                 <div id="committed-block" hidden><div class="reply-label">已提交回复</div><pre class="reply-text" id="reply-text"></pre></div>
                 <div class="draft-block" id="draft-block" hidden><div class="reply-label"><span class="dot" data-status="running"></span><span id="draft-label">正在生成</span></div><pre class="reply-text" id="draft-text"></pre></div>
@@ -336,7 +337,7 @@
       function ensureBridge() {
         if (window.parent === window) return Promise.reject(new Error('请从 Codex 或本地监看地址打开面板。'));
         if (!bridgePromise) {
-          bridgePromise = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.0.3' }, appCapabilities: {} })
+          bridgePromise = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.0.4' }, appCapabilities: {} })
             .then(() => {
               rpcNotify('ui/notifications/initialized', {});
               rpcNotify('ui/notifications/size-changed', { height: Math.max(560, Math.min(800, window.innerHeight || 720)) });

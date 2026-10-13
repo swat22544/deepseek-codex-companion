@@ -55,8 +55,8 @@ test('runner distinguishes total and idle budgets without weakening fixed model 
   await t.test('a large task can be assigned more than ten minutes with matching tool deadline',async()=>{
     const {result,exitCode,started}=await invoke('success',{taskSize:'large'});
     assert.equal(exitCode,0);assert.equal(result.ok,true);assert.equal(result.timeout,null);
-    assert.equal(result.timing.totalTimeoutMs,1800000);assert.equal(result.timing.idleTimeoutMs,600000);
+    assert.equal(result.timing.totalTimeoutMs,2700000);assert.equal(result.timing.idleTimeoutMs,600000);
     const {deadline}=JSON.parse(result.final.text);
-    assert.ok(deadline>=started+1800000);assert.ok(deadline<started+1805000);
+    assert.ok(deadline>=started+2700000);assert.ok(deadline<started+2705000);
   });
 });

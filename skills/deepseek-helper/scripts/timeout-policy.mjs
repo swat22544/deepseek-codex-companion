@@ -6,8 +6,8 @@ const SIZES = new Set(['auto', 'small', 'medium', 'large']);
 const PROGRESS_KINDS = new Set(['model_start', 'model_output', 'tool_start', 'tool_completed', 'final']);
 const DEFAULTS = Object.freeze({
   small: Object.freeze({ total: 5 * 60 * 1000, idle: 3 * 60 * 1000 }),
-  medium: Object.freeze({ total: 15 * 60 * 1000, idle: 7 * 60 * 1000 }),
-  large: Object.freeze({ total: 30 * 60 * 1000, idle: 10 * 60 * 1000 }),
+  medium: Object.freeze({ total: 20 * 60 * 1000, idle: 7 * 60 * 1000 }),
+  large: Object.freeze({ total: 45 * 60 * 1000, idle: 10 * 60 * 1000 }),
 });
 const has = (object, key) => Object.hasOwn(object, key);
 

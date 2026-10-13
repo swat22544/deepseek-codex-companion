@@ -13,6 +13,8 @@ description: 在 Codex 中打开本机 DeepSeek 辅助任务的实时回复与�
 
 正在生成的文字可能在重试后丢弃，最终回复以完成事件为准。完成代表 DeepSeek 返回了结果，仍需主代理独立核验。超过 15 秒没有心跳的未结束任务显示“监看记录中断”，这不等于执行已经失败或停止；由主代理检查结果文件与进程状态，不自动重跑任务。
 
+1.0.4 的观察器在文件写入或替换暂时失败时有限重试，后续心跳仍可恢复；结束时单独确认最终状态是否保存。`monitorWrite` 只记录错误类别、阶段与计数，不含异常原文。旧中断记录需主代理核对对应结果、备份并标明恢复来源后修复，不能自动以临时文件推定执行成功。
+
 可选的 `<CODEX_HOME>/deepseek-monitor/service-config.json` 可固定本机端口和访问令牌；不存在时仍使用随机端口。`server/watchdog.mjs` 只负责恢复监看 HTTP 服务，不执行或续作模型任务。安装包不会自动创建系统登录任务；已有本机配置或登录启动项应在更新时保留。令牌、服务配置、运行记录与日志均不发布到 GitHub。
 
 当用户要执行新任务时读取并应用已安装的 deepseek-helper Skill，由它在已有授权范围内按需委派；不要由监看工具开放新的执行能力。Harness 安装目录依次取 `DEEPSEEK_HARNESS_HOME`、helper 技能根目录 `helper.config.json` 的 `installation`、默认 `D:/DeepSeek Harness`；固定 **DeepSeek-V41-Flash / Max** 设置由 helper 核验。用户只问状态时使用 monitor_list/monitor_get，不发起额外 DeepSeek 请求。
