@@ -32,6 +32,8 @@
 
 ## 检查结果
 
+结果是待核验候选；调用完成、格式符合要求和内容可采用应分别判断。分项方法见 [verification.md](verification.md)，可选机械检查命令及 JSON 契约见 [verification-contract.md](verification-contract.md)。契约文件仅供主代理本地检查，不是运行器请求中的新字段，也不必把独立答案交给模型。
+
 结果 JSON 保留旧字段 `ok/trust/verificationRequired/modelSelection/sessionId/final`，增加 `mode`、`modelRequests`、`toolCalls`、`toolResults`、`toolAudit`、`cleanup`、`runDirectory`、`snapshots` 和 `artifacts`。
 
 `snapshots` 含原始路径和哈希，便于主代理判断候选所依据的版本；模型工具只按 ID 访问其内容。`artifacts` 含候选文件绝对路径、大小与哈希。失败调用的部分输出和文件也可能存在，不能作为完成结果直接使用。

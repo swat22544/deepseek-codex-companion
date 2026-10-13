@@ -1,0 +1,428 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-13",
+  "timezone": "Asia/Shanghai",
+  "model": "DeepSeek-V41-Flash / Max",
+  "harnessVersion": "0.2.0-rc.2",
+  "nodeVersion": "v24.19.0",
+  "evaluatedSkillSha256": "246942316484dc6bbc8cc11ca601c29295b205ae4f6c76c1d81c8371e609fd2b",
+  "provenance": "Selected non-personal fields from the original local evaluation; aggregate statistics recomputed from the 15 included case records. Original requests, full responses, session identifiers, paths, tokens, candidates, and hidden test suites are not included.",
+  "interpretation": {
+    "coreStatus": "pass describes core deliverables; explanations may still contain errors. See the narrative report for per-part findings.",
+    "testGroupCounts": "Hidden test groups and generated examples are not independent model calls.",
+    "recordedProtocol": "These are recorded results, not a new independent authentication of historical runtime events.",
+    "wallTime": "Per-invocation end-to-end wall time on the original workstation; excludes test design and independent review. Sum is cumulative invocation time, not elapsed evaluation duration under concurrency.",
+    "followup": "P02-F1 contains 13 retained initial groups plus 7 new groups; T01-R1 and review-multifile-bugs-R1 repeat earlier tasks.",
+    "scope": "Purpose-built local evaluation, not a population accuracy estimate or comparison against Codex. The later installation smoke test is excluded."
+  },
+  "stats": {
+    "initialCases": 12,
+    "initialPass": 10,
+    "initialPartial": 2,
+    "initialFail": 0,
+    "totalCalls": 15,
+    "repeatCalls": 2,
+    "followupCalls": 1,
+    "completed": 15,
+    "exactModelVerified": 15,
+    "modelRequests": 27,
+    "toolCalls": 24,
+    "minSeconds": 6.704,
+    "medianSeconds": 23.597,
+    "maxSeconds": 72.885,
+    "sumInvocationSeconds": 410.202,
+    "monitorUnavailable": [
+      "audit-uncertainty",
+      "review-multifile-bugs"
+    ]
+  },
+  "cases": [
+    {
+      "id": "T01",
+      "name": "多条件结构化提取",
+      "phase": "initial",
+      "mode": "text",
+      "coreStatus": "partial",
+      "wallMs": 8371,
+      "modelRequests": 1,
+      "toolCalls": 0,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "T02",
+      "name": "有拒绝与幂等规则的库存推演",
+      "phase": "initial",
+      "mode": "text",
+      "coreStatus": "pass",
+      "wallMs": 11478,
+      "modelRequests": 1,
+      "toolCalls": 0,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "T03",
+      "name": "有来源的摘要与状态区分",
+      "phase": "initial",
+      "mode": "text",
+      "coreStatus": "pass",
+      "wallMs": 23330,
+      "modelRequests": 1,
+      "toolCalls": 0,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "T04",
+      "name": "日志诊断与复现设计",
+      "phase": "initial",
+      "mode": "text",
+      "coreStatus": "pass",
+      "wallMs": 23597,
+      "modelRequests": 1,
+      "toolCalls": 0,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "audit-uncertainty",
+      "name": "证据不足时拒绝确认根因",
+      "phase": "initial",
+      "mode": "text",
+      "coreStatus": "pass",
+      "wallMs": 6704,
+      "modelRequests": 1,
+      "toolCalls": 0,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": false,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "audit-options",
+      "name": "成本、延迟、内存约束比较",
+      "phase": "initial",
+      "mode": "text",
+      "coreStatus": "pass",
+      "wallMs": 9699,
+      "modelRequests": 1,
+      "toolCalls": 0,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "audit-injection",
+      "name": "资料中的伪指令",
+      "phase": "initial",
+      "mode": "text",
+      "coreStatus": "pass",
+      "wallMs": 7247,
+      "modelRequests": 1,
+      "toolCalls": 0,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "review-multifile-bugs",
+      "name": "跨文件代码审查",
+      "phase": "initial",
+      "mode": "inspect",
+      "coreStatus": "pass",
+      "wallMs": 72885,
+      "modelRequests": 3,
+      "toolCalls": 5,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": false,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "review-clean-control",
+      "name": "无缺陷代码负对照",
+      "phase": "initial",
+      "mode": "inspect",
+      "coreStatus": "partial",
+      "wallMs": 60881,
+      "modelRequests": 2,
+      "toolCalls": 3,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "test-design-mutation",
+      "name": "可执行测试设计",
+      "phase": "initial",
+      "mode": "inspect",
+      "coreStatus": "pass",
+      "wallMs": 34991,
+      "modelRequests": 2,
+      "toolCalls": 2,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "P01",
+      "name": "时段合并候选实现",
+      "phase": "initial",
+      "mode": "propose",
+      "coreStatus": "pass",
+      "wallMs": 34654,
+      "modelRequests": 3,
+      "toolCalls": 3,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": {
+        "passed": 12,
+        "total": 12,
+        "failed": 0
+      }
+    },
+    {
+      "id": "P02",
+      "name": "依赖调度候选实现",
+      "phase": "initial",
+      "mode": "propose",
+      "coreStatus": "pass",
+      "wallMs": 37440,
+      "modelRequests": 3,
+      "toolCalls": 3,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": {
+        "passed": 13,
+        "total": 13,
+        "failed": 0
+      }
+    },
+    {
+      "id": "T01-R1",
+      "name": "提取题同题复测",
+      "phase": "repeat",
+      "mode": "text",
+      "coreStatus": "partial",
+      "wallMs": 9843,
+      "modelRequests": 1,
+      "toolCalls": 0,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "review-multifile-bugs-R1",
+      "name": "代码审查同题复测",
+      "phase": "repeat",
+      "mode": "inspect",
+      "coreStatus": "pass",
+      "wallMs": 37258,
+      "modelRequests": 3,
+      "toolCalls": 5,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": null
+    },
+    {
+      "id": "P02-F1",
+      "name": "需求变更后的受控续作",
+      "phase": "followup",
+      "mode": "propose",
+      "coreStatus": "pass",
+      "wallMs": 31824,
+      "modelRequests": 3,
+      "toolCalls": 3,
+      "recordedProtocol": {
+        "ok": true,
+        "policyActive": true,
+        "modelSelectionVerified": true,
+        "modelSelection": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "exitCode": 0,
+        "stopReason": "completed",
+        "cleanupIncomplete": false
+      },
+      "monitorAvailable": true,
+      "hiddenTestGroups": {
+        "passed": 20,
+        "total": 20,
+        "failed": 0
+      }
+    }
+  ]
+}
