@@ -54,17 +54,17 @@ test('legacy and malformed timing never invent a budget or forward unbounded dat
  assert.deepEqual(summary({timing:{taskSize:'small',lastProgressKind:null},timeout:{kind:'idle',limitMs:NaN,elapsedMs:-4}}).timing,{taskSize:'small',lastProgressKind:null});
  assert.deepEqual(summary({timeout:{kind:'idle',limitMs:NaN,elapsedMs:-4}}).timeout,{kind:'idle'});
 });
-test('MCP list exposes the safe timing summary and timeout cause',async()=>{
+test('MCP list exposes backend, safe timing summary and timeout cause',async()=>{
  const codexHome=await mkdtemp(join(tmpdir(),'deepseek-monitor-timing-mcp-')),id=randomUUID();
  const runs=join(codexHome,'deepseek-monitor','runs');await mkdir(runs,{recursive:true});
- await writeFile(join(runs,id+'.json'),JSON.stringify({id,version:1,status:'failed',done:true,startedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),timing:{taskSize:'large',totalTimeoutMs:1200000,idleTimeoutMs:420000,totalElapsedMs:500000,idleElapsedMs:420000,privatePayload:'PRIVATE'},timeout:{kind:'idle',limitMs:420000,elapsedMs:420000,extra:'PRIVATE'}}));
+ await writeFile(join(runs,id+'.json'),JSON.stringify({id,version:1,backend:'opencode',status:'failed',done:true,startedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),timing:{taskSize:'large',totalTimeoutMs:1200000,idleTimeoutMs:420000,totalElapsedMs:500000,idleElapsedMs:420000,privatePayload:'PRIVATE'},timeout:{kind:'idle',limitMs:420000,elapsedMs:420000,extra:'PRIVATE'}}));
  const child=spawn(process.execPath,[fileURLToPath(new URL('../server/mcp.mjs',import.meta.url))],{stdio:['pipe','pipe','pipe'],windowsHide:true,env:{...process.env,CODEX_HOME:codexHome}});
  const reader=createInterface({input:child.stdout});
  try{
   const response=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('MCP timing test timed out')),5000);reader.on('line',line=>{const message=JSON.parse(line);if(message.id===1){clearTimeout(timer);resolve(message);}});});
   child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'monitor_list',arguments:{}}})+'\n');
   const message=await response,record=message.result.structuredContent.runs[0];
-  assert.equal(record.timing.totalTimeoutMs,1200000);assert.equal(record.timeout.kind,'idle');assert.ok(!JSON.stringify(message).includes('PRIVATE'));
+  assert.equal(record.backend,'opencode');assert.equal(record.timing.totalTimeoutMs,1200000);assert.equal(record.timeout.kind,'idle');assert.ok(!JSON.stringify(message).includes('PRIVATE'));
  }finally{reader.close();child.stdin.end();child.kill();}
 });
 test('HTTP monitor requires capability and rejects cross-origin and writes',async()=>{

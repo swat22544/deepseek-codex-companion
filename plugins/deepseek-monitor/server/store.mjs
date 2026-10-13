@@ -3,12 +3,15 @@ import {homedir} from 'node:os';
 import {join} from 'node:path';
 export const dataRoot=join(process.env.CODEX_HOME||join(homedir(),'.codex'),'deepseek-monitor');
 const idPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+const safeBackend=value=>value==='opencode'?'opencode':'harness';
 export async function getRun(id,root=dataRoot){
   if(!idPattern.test(id))throw new Error('Invalid run id');
   const path=join(root,'runs',id+'.json');
   if((await stat(path)).size>5*1024*1024)throw new Error('Run exceeds size limit');
   const r=JSON.parse(await readFile(path,'utf8'));
   if(r.id!==id||r.version!==1)throw new Error('Invalid run record');
+  // Legacy records came from Harness; do not expose arbitrary backend metadata.
+  r.backend=safeBackend(r.backend);
   if(!r.done&&Date.now()-Date.parse(r.updatedAt)>15000)return {...r,status:'interrupted',observationStale:true,error:'超过 15 秒未收到监看记录更新；这不等于模型失败。请由主代理检查本次结果文件和进程状态。'};
   return r;
 }
@@ -35,7 +38,7 @@ function safeTimeout(value){
 }
 export function summary(r){
   const {id,title,status,mode,taskType,startedAt,updatedAt,elapsedMs,model,policyActive,modelSelectionVerified}=r;
-  const result={id,title,status,mode,taskType,startedAt,updatedAt,elapsedMs,model,policyActive,modelSelectionVerified};
+  const result={id,title,backend:safeBackend(r.backend),status,mode,taskType,startedAt,updatedAt,elapsedMs,model,policyActive,modelSelectionVerified};
   const timing=safeTiming(r.timing),timeout=safeTimeout(r.timeout);
   if(timing!==undefined)result.timing=timing;
   if(timeout!==undefined)result.timeout=timeout;

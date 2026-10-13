@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,mkdir,rm,access} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,relative,resolve} from 'node:path';
 import {install} from '../scripts/install.mjs';
 
 test('installer resolves Node, preserves personal marketplace and refuses accidental overwrite',async()=>{
@@ -34,4 +34,45 @@ test('invalid Harness path fails before installing any component',async()=>{
     await assert.rejects(()=>install({codexHome,dshHome:root,allowNonWindows:true}),/not found/);
     await assert.rejects(()=>access(codexHome));
   }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('installer preserves both backend paths across partial updates and backs up prior local configuration',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'deepseek-dual-install-'));
+  try{
+    const codexHome=join(root,'codex'),dshHome=join(root,'Harness'),otherDshHome=join(root,'Harness new');
+    const opencodeCli=join(root,'opencode-cli.exe'),otherCli=join(root,'opencode-cli-new.exe');
+    for(const directory of [dshHome,otherDshHome]){await mkdir(directory);await writeFile(join(directory,'DeepSeek Harness.exe'),'TEST ONLY');}
+    for(const path of [opencodeCli,otherCli])await writeFile(path,'TEST ONLY');
+    const result=await install({codexHome,dshHome,opencodeCli,allowNonWindows:true});
+    const configPath=join(result.skillTarget,'helper.config.json');
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:dshHome,opencodeExecutable:opencodeCli});
+    await writeFile(configPath,JSON.stringify({installation:dshHome,opencodeExecutable:opencodeCli,unknownField:'do not propagate'}));
+    const updateHarness=await install({codexHome,dshHome:otherDshHome,overwrite:true,allowNonWindows:true});
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:otherDshHome,opencodeExecutable:opencodeCli});
+    assert.equal(JSON.parse(await readFile(join(updateHarness.backupDirectory,'deepseek-helper','helper.config.json'),'utf8')).installation,dshHome);
+    const updateOpenCode=await install({codexHome,opencodeCli:otherCli,overwrite:true,allowNonWindows:true});
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:otherDshHome,opencodeExecutable:otherCli});
+    assert.equal(updateOpenCode.dshHome,otherDshHome);
+    assert.equal(updateOpenCode.opencodeExecutable,otherCli);
+    const updateNeither=await install({codexHome,overwrite:true,allowNonWindows:true});
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:otherDshHome,opencodeExecutable:otherCli});
+    assert.ok(updateNeither.backupDirectory);
+  }finally{
+    assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-dual-install-[^\\/]+$/);
+    await rm(root,{recursive:true,force:true});
+  }
+});
+
+test('invalid or directory OpenCode executable is rejected before installation',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'deepseek-opencode-invalid-'));
+  try{
+    const codexHome=join(root,'codex');
+    for(const opencodeCli of ['relative.exe',join(root,'missing.exe'),root]){
+      await assert.rejects(()=>install({codexHome,opencodeCli,allowNonWindows:true}),/absolute|not found/);
+      await assert.rejects(()=>access(codexHome));
+    }
+  }finally{
+    assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-opencode-invalid-[^\\/]+$/);
+    await rm(root,{recursive:true,force:true});
+  }
 });

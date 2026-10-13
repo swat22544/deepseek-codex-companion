@@ -59,6 +59,7 @@ export async function delegate(raw) {
 
 async function runDelegate(raw,monitor) {
   const request=validateRequest(raw);
+  if(request.backend!=='harness')throw new Error('Harness runner requires backend harness.');
   const {installation,executable,entrypoint,dshHome}=resolveRuntimePaths();
   if(!existsSync(executable))throw new Error(`DeepSeek Harness is missing at ${installation}`);
   const files=await snapshotFiles(request.files),timeoutPolicy=resolveTimeoutPolicy(request,files),profile=await ensureProfile(dshHome);
@@ -201,17 +202,17 @@ async function runDelegate(raw,monitor) {
     if(!stat.isFile()||stat.isSymbolicLink())throw new Error('Unexpected non-file candidate artifact.');
     const bytes=await readFile(path);artifacts.push({name,path,bytes:bytes.length,sha256:hash(bytes),trust:'unverified_candidate'});
   }
-  return {...result,profile,runDirectory:cwd,snapshots:files.map(({content,...metadata})=>metadata),artifacts};
+  return {...result,backend:'harness',profile,runDirectory:cwd,snapshots:files.map(({content,...metadata})=>metadata),artifacts};
 }
 
-export async function main() {
+export async function main(run=delegate) {
   const args=process.argv.slice(2);
   if(!args.length||args[0]==='--help'){console.log('Usage: node delegate.mjs REQUEST.json [RESULT.json]\nModes: text, inspect, propose. Task types: extract, classify, format, draft, analyze, review, debug, plan, implement, test-design.\nAll results require independent supervisor validation. See references/request.md.');return;}
   if(args.length>2)throw new Error('Expected a request file and optional result file.');
   let result;
   try {
     const request=JSON.parse((await readFile(resolve(args[0]),'utf8')).replace(/^\uFEFF/,''));
-    result=await delegate(request);
+    result=await run(request);
   } catch(error) {
     result={ok:false,trust:'unverified_candidate',verificationRequired:true,phase:'setup-or-result',policyActive:false,modelSelectionVerified:false,final:null,artifacts:[],error:error.message};
   }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {join, resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {mkdtemp, writeFile, rm} from 'node:fs/promises';
-import {resolveRuntimePaths, resolveCodexHome, DEFAULT_HARNESS_HOME} from '../scripts/runtime-paths.mjs';
+import {resolveRuntimePaths, resolveOpenCodePaths, resolveCodexHome, DEFAULT_HARNESS_HOME, DEFAULT_OPENCODE_CLI} from '../scripts/runtime-paths.mjs';
 
 const fixtureRoot=await mkdtemp(join(tmpdir(),'companion-paths-'));
 const absentConfig=join(fixtureRoot,'missing.json');
@@ -61,4 +61,26 @@ test('invalid config fails closed but an explicit install override can recover',
   // Monitor storage does not depend on the Harness installation configuration.
   const codexHome=join(fixtureRoot,'Codex');
   assert.equal(resolveCodexHome({env:{CODEX_HOME:codexHome}}),codexHome);
+});
+
+test('OpenCode path resolves config and per-call environment without reading provider credentials', async () => {
+  const configPath=join(fixtureRoot,'opencode.json');
+  const configured=join(fixtureRoot,'OpenCode 用户','opencode-cli.exe');
+  const overridden=join(fixtureRoot,'OpenCode override','opencode-cli.exe');
+  await writeFile(configPath,JSON.stringify({opencodeExecutable:configured}));
+  assert.equal(resolveOpenCodePaths({env:{},configPath}).executable,configured);
+  assert.equal(resolveRuntimePaths({env:{},configPath}).installation,resolve(DEFAULT_HARNESS_HOME));
+  const env={DEEPSEEK_OPENCODE_CLI:overridden,CODEX_HOME:join(fixtureRoot,'codex')};
+  assert.deepEqual(resolveOpenCodePaths({env,configPath}),{executable:overridden,codexHome:env.CODEX_HOME});
+  env.DEEPSEEK_OPENCODE_CLI='';
+  assert.equal(resolveOpenCodePaths({env,configPath}).executable,configured);
+  env.DEEPSEEK_OPENCODE_CLI='../relative.exe';
+  assert.throws(()=>resolveOpenCodePaths({env,configPath}),/absolute/);
+  await writeFile(configPath,JSON.stringify({opencodeExecutable:'relative.exe'}));
+  assert.throws(()=>resolveOpenCodePaths({env:{},configPath}),/helper\.config\.json/);
+  assert.equal(resolveOpenCodePaths({env:{DEEPSEEK_OPENCODE_CLI:overridden},configPath}).executable,overridden);
+});
+
+test('OpenCode uses the Windows desktop CLI default when neither local nor environment path is set', {skip:process.platform!=='win32'}, () => {
+  assert.equal(resolveOpenCodePaths({env:{},configPath:absentConfig}).executable,resolve(DEFAULT_OPENCODE_CLI));
 });

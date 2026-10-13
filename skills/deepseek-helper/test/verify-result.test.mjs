@@ -45,6 +45,27 @@ test('protocol rejects missing, malformed or contradictory recorded guarantees',
   }
 });
 
+test('backend verification preserves legacy Harness and requires OpenCode runtime evidence and exact provider', () => {
+  assert.equal(verifyResult(valid()).mechanicalOk,true);
+  assert.equal(verifyResult({...valid(),backend:'harness'}).mechanicalOk,true);
+  const opencode={...valid(),backend:'opencode',runtimeEvidenceVerified:true,modelSelection:{provider:'deepseek',model:'deepseek-flash',reasoningEffort:'max'}};
+  assert.equal(verifyResult(opencode).mechanicalOk,true);
+  for(const backend of ['',null,undefined,'unknown',{},1]){
+    assert.ok(verifyResult({...valid(),backend}).protocol.issues.some(entry=>entry.code==='backend_unsupported'));
+  }
+  for(const value of [false,undefined,1,'true']){
+    assert.ok(verifyResult({...opencode,runtimeEvidenceVerified:value}).protocol.issues.some(entry=>entry.code==='runtime_evidence_unverified'));
+  }
+  for(const result of [
+    {...opencode,modelSelection:{...opencode.modelSelection,provider:'deepseek-official'}},
+    {...valid(),modelSelection:{...valid().modelSelection,provider:'deepseek'}},
+    {...opencode,modelSelection:{...opencode.modelSelection,model:'deepseek-chat'}},
+    {...opencode,modelSelection:{...opencode.modelSelection,reasoningEffort:'high'}},
+  ])assert.ok(verifyResult(result).protocol.issues.some(entry=>entry.code==='model_mismatch'));
+  assert.equal(verifyResult({...opencode,cleanup:{incomplete:true}}).mechanicalOk,false);
+  assert.equal(verifyResult({...opencode,policyActive:false}).mechanicalOk,false);
+});
+
 test('tool failures are separate from a structurally completed protocol', () => {
   const result = valid();
   result.toolCalls = [{ callId: 'c1', tool: 'read_snapshot' }];

@@ -9,10 +9,10 @@ const html=await readFile(new URL('../ui/panel.html',import.meta.url),'utf8');
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 function panel(){
  const nodes=new Map();
- const make=()=>({textContent:'',hidden:false,dataset:{},title:'',classList:{toggle(){}},setAttribute(){},addEventListener(){},append(){},replaceChildren(){},querySelectorAll(){return []},focus(){}});
+ const make=()=>({textContent:'',hidden:false,dataset:{},title:'',children:[],classList:{toggle(){}},setAttribute(){},addEventListener(){},append(...nodes){this.children.push(...nodes)},replaceChildren(...nodes){this.children=nodes},querySelectorAll(){return []},focus(){}});
  const node=id=>{if(!nodes.has(id))nodes.set(id,make());return nodes.get(id)};
  const context={Date,Intl,URLSearchParams,console,location:{hash:'',protocol:'file:',hostname:''},setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},requestAnimationFrame:fn=>fn(),document:{hidden:true,getElementById:node,querySelector:node,createElement:make,createElementNS:make,createDocumentFragment:make,addEventListener(){}},window:{addEventListener(){},parent:{postMessage(){}}}};
- const instrumented=script.replace('renderList(); requestRefresh();','globalThis.testPanel = {state, renderDetail, updateElapsed, updateConnection, statusLabel, runError};');
+ const instrumented=script.replace('renderList(); requestRefresh();','globalThis.testPanel = {state, renderDetail, renderList, updateElapsed, updateConnection, statusLabel, runError};');
  vm.runInNewContext(instrumented,context);
  return {...context.testPanel,node};
 }
@@ -60,4 +60,27 @@ test('active extrapolation uses record time, stays bounded, and never independen
 test('connection labels refer to monitoring, not model progress',()=>{
  const p=panel();p.updateConnection(true);assert.equal(p.node('connection-label').textContent,'监看已连接');
  p.updateConnection(false,'offline');assert.equal(p.node('connection-label').textContent,'监看连接中断');assert.match(p.node('empty-description').textContent,/不能代表模型运行状态/);
+});
+
+test('backend detail uses explicit fixed labels and legacy Harness fallback',()=>{
+ for(const backend of [undefined,'harness','opencode','PRIVATE <script>',{credential:'PRIVATE'},['opencode']]){
+  const p=render({...base(),backend,model:{model:'deepseek-flash',reasoningEffort:'max'}});
+  assert.equal(p.node('task-backend').textContent,backend==='opencode'?'OpenCode':'Harness');
+  assert.equal(p.node('task-model').textContent,'DeepSeek-V41-Flash · Max');
+ }
+});
+
+test('backend list source distinguishes same-title tasks and can be searched',()=>{
+ const p=panel();
+ p.state.runs=[{...base(),id:'h'}, {...base(),id:'o',backend:'opencode'}];
+ p.renderList();
+ const buttons=()=>p.node('run-list').children[0].children.map(item=>item.children[0]);
+ assert.equal(buttons().length,2);
+ assert.match(buttons()[0].title,/Harness/);assert.match(buttons()[1].title,/OpenCode/);
+ assert.equal(buttons()[0].children[1].children[1].children[0].textContent,'Harness · 进行中');
+ assert.equal(buttons()[1].children[1].children[1].children[0].textContent,'OpenCode · 进行中');
+ p.state.query='opencode';p.renderList();
+ assert.equal(buttons().length,1);assert.equal(buttons()[0].dataset.runId,'o');
+ p.state.query='';p.state.runs[1].backend='harness';p.renderList();
+ assert.match(buttons()[1].title,/Harness/);
 });

@@ -11,14 +11,14 @@ node scripts/verify-result.mjs result.json --contract expected.json
 
 ## 独立的判定层
 
-- `protocol.ok`：记录中的 `ok`、守卫激活、模型核验、实际请求次数、固定 `deepseek-official / deepseek-flash / max`、退出码、完成原因、清理状态、会话与最终回复、工具调用配对都通过。记录本身未经此工具真实性鉴定；它不能替代运行时守卫。
+- `protocol.ok`：记录中的 `ok`、守卫激活、模型核验、实际请求次数、固定模型、退出码、完成原因、清理状态、会话与最终回复、工具调用配对都通过。固定模型按后端分别检查：Harness 为 `deepseek-official / deepseek-flash / max`；OpenCode 为 `deepseek / deepseek-flash / max`，还要求 `runtimeEvidenceVerified: true`。旧记录没有 `backend` 时按 Harness 检查。记录本身未经此工具真实性鉴定；它不能替代运行时守卫。
 - `tools.ok`：没有记录到 `status: "error"` 的工具结果。工具失败单独列出，即使委派协议正常完成，也使 `mechanicalOk` 为 `false`。主代理检查失败对交付的影响，不能静默忽略。
 - `contract.status`：`not_requested`、`passed`、`failed` 或 `invalid`。没有指定契约时，不检查回复格式与内容。
 - `mechanicalOk`：上述机械检查通过；它始终伴随 `independentReviewRequired: true`、`semanticAcceptance: false` 和 `trust: "unverified_candidate"`。
 
 CLI 退出码：`0` 为机械检查通过；`1` 为结果不符合检查；`2` 为命令参数、输入文件或契约无效。stdout 是 JSON 报告；输入文件错误写入 stderr。结果文本不会出现在报告中。
 
-`result.exitCode` 是结果文件记录的 Harness 退出码，**不是本工具独立观察的委派命令退出码**。主代理还要单独记录实际运行命令的退出状态，确认结果文件来自本次调用，并关联请求、结果、会话和候选文件。对旧文件运行本工具不能证明会话新鲜度，也不能证明记录未被修改；本工具自己的退出码只表示校验过程的结论。
+`result.exitCode` 是结果文件记录的后端进程退出码，**不是本工具独立观察的委派命令退出码**。主代理还要单独记录实际运行命令的退出状态，确认结果文件来自本次调用，并关联请求中的后端、结果、会话和候选文件。两路分别运行机械检查，不能以一条通过代替另一条。对旧文件运行本工具不能证明会话新鲜度，也不能证明记录未被修改；本工具自己的退出码只表示校验过程的结论。
 
 ## 小型契约格式
 

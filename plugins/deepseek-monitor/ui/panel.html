@@ -232,6 +232,7 @@
             <div class="eyebrow">DEEPSEEK HELPER</div>
             <div class="title-line"><h1 id="task-title"></h1><span class="status" id="task-status"></span></div>
             <div class="metadata">
+              <span id="task-backend" title="外部辅助代理运行来源"></span><span class="metadata-separator" aria-hidden="true"></span>
               <span class="metadata-item"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 3 2.7 6.3L21 12l-6.3 2.7L12 21l-2.7-6.3L3 12l6.3-2.7Z"/></svg><span id="task-model"></span></span>
               <span class="metadata-separator" aria-hidden="true"></span><span id="task-mode"></span>
               <span class="metadata-separator" aria-hidden="true"></span>
@@ -275,6 +276,7 @@
       const state = { runs: [], selectedId: null, run: null, query: '', tab: 'reply', follow: true, connected: false, hasLoaded: false, busy: false, queued: false, disposed: false, fetchedAt: 0 };
       const statusNames = { preparing: '准备中', running: '进行中', completed: '待主代理复核', failed: '失败', interrupted: '监看记录中断' };
       const modeNames = { text: '文本任务', 'text-only': '文本任务', inspect: '文件审查', propose: '候选实现', snapshot: '文件快照', 'file-snapshot': '文件快照', candidate: '候选实现', 'candidate-files': '候选实现', files: '文件快照' };
+      const backendLabel = (run) => run?.backend === 'opencode' ? 'OpenCode' : 'Harness';
       const active = (run) => run && (run.status === 'preparing' || run.status === 'running');
       const text = (value, fallback = '') => typeof value === 'string' ? value : fallback;
       const number = (value, fallback = 0) => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -337,7 +339,7 @@
       function ensureBridge() {
         if (window.parent === window) return Promise.reject(new Error('请从 Codex 或本地监看地址打开面板。'));
         if (!bridgePromise) {
-          bridgePromise = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.0.4' }, appCapabilities: {} })
+          bridgePromise = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.1.0' }, appCapabilities: {} })
             .then(() => {
               rpcNotify('ui/notifications/initialized', {});
               rpcNotify('ui/notifications/size-changed', { height: Math.max(560, Math.min(800, window.innerHeight || 720)) });
@@ -436,9 +438,9 @@
       }
       function renderList() {
         const query = state.query.toLocaleLowerCase();
-        const visible = state.runs.filter((run) => [run.title, run.id, run.taskType, statusLabel(run)].some((value) => text(value).toLocaleLowerCase().includes(query)));
+        const visible = state.runs.filter((run) => [run.title, run.id, run.taskType, statusLabel(run), backendLabel(run)].some((value) => text(value).toLocaleLowerCase().includes(query)));
         setText($('run-count'), String(state.runs.length));
-        const signature = JSON.stringify([state.selectedId, query, visible.map((run) => [run.id, run.title, run.status, timeoutKind(run), run.startedAt])]);
+        const signature = JSON.stringify([state.selectedId, query, visible.map((run) => [run.id, run.title, backendLabel(run), run.status, timeoutKind(run), run.startedAt])]);
         if (signature === listSignature) return;
         listSignature = signature;
         const focusedId = document.activeElement?.closest?.('[data-run-id]')?.dataset.runId;
@@ -447,11 +449,11 @@
         for (const run of visible) {
           const item = element('li');
           const button = element('button', 'run-row'); button.type = 'button'; button.dataset.runId = run.id; button.setAttribute('aria-current', String(run.id === state.selectedId));
-          button.title = `${text(run.title, '未命名任务')} · ${statusLabel(run)}`;
+          button.title = `${text(run.title, '未命名任务')} · ${backendLabel(run)} · ${statusLabel(run)}`;
           const dot = element('span', 'dot'); dot.dataset.status = text(run.status); dot.setAttribute('aria-hidden', 'true');
           const copy = element('span', 'run-copy');
           copy.append(element('span', 'run-title', text(run.title, '未命名任务')));
-          const meta = element('span', 'run-meta'); meta.append(element('span', '', statusLabel(run)), element('span', '', timeLabel(run.startedAt, true))); copy.append(meta);
+          const meta = element('span', 'run-meta'); meta.append(element('span', '', `${backendLabel(run)} · ${statusLabel(run)}`), element('span', '', timeLabel(run.startedAt, true))); copy.append(meta);
           button.append(dot, copy); item.append(button); fragment.append(item);
         }
         $('run-list').replaceChildren(fragment);
@@ -516,6 +518,7 @@
         setText($('task-title'), text(run.title, '未命名任务'));
         $('task-title').title = text(run.title, '未命名任务');
         setText($('task-status'), statusLabel(run)); $('task-status').dataset.status = text(run.status);
+        setText($('task-backend'), backendLabel(run));
         const model = run.model?.model === 'deepseek-flash' ? 'DeepSeek-V41-Flash' : text(run.model?.model, '等待模型信息');
         const effort = run.model?.reasoningEffort === 'max' ? 'Max' : text(run.model?.reasoningEffort, '—');
         setText($('task-model'), `${model} · ${effort}`);
