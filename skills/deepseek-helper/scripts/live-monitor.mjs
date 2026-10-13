@@ -21,6 +21,21 @@ function safeTimeout(value) {
     if(typeof value[key]==='number'&&Number.isFinite(value[key])&&value[key]>=0)out[key]=value[key];
   return out;
 }
+const errorTypes=new Set(['unknown','aborted','permission.rejected','tool.execution','provider.rate-limit','provider.auth','provider.quota','provider.content-filter','provider.transport','provider.internal','provider.invalid-output','provider.invalid-request','provider.unsupported-operation','provider.no-route','provider.unknown','provider.timeout']);
+const errorReasons=new Set(['connection_reset','connection_refused','dns_failure','tls_failure','stream_interrupted','request_timeout','rate_limited','quota_exceeded','context_length_exceeded','missing_reasoning_content','invalid_tool_call','invalid_api_key','permission_denied','cancelled','provider_unavailable']);
+const recoveryStatuses=new Set(['not_needed','skipped','recovered','unavailable','failed','timed_out']);
+function safeErrorDetails(value) {
+  if(!value||typeof value!=='object'||Array.isArray(value)||!['cli','http','session'].includes(value.source))return null;
+  return {type:errorTypes.has(value.type)?value.type:'unknown',httpStatus:Number.isInteger(value.httpStatus)&&value.httpStatus>=100&&value.httpStatus<=599?value.httpStatus:null,source:value.source,reason:errorReasons.has(value.reason)?value.reason:null};
+}
+function safeErrorEvidence(value) {
+  if(!Array.isArray(value))return [];
+  const out=[];for(const item of value){const detail=safeErrorDetails(item);if(detail)out.push(detail);if(out.length===3)break;}return out;
+}
+function safeDiagnosticRecovery(value) {
+  if(!value||typeof value!=='object'||Array.isArray(value)||!recoveryStatuses.has(value.status)||!Number.isSafeInteger(value.checkedMessages)||value.checkedMessages<0)return null;
+  return {status:value.status,checkedMessages:value.checkedMessages};
+}
 
 // Only public answer text and allowlisted activity metadata are persisted.
 export async function createMonitor(request, {directory,io={},sleep=delay,heartbeat={setInterval,clearInterval}}={}) {
@@ -30,7 +45,7 @@ export async function createMonitor(request, {directory,io={},sleep=delay,heartb
   // Backend is a display discriminator, never an installation path or config.
   const backend=request?.backend==='opencode'?'opencode':'harness';
   const backendLabel=backend==='opencode'?'OpenCode':'Harness';
-  const state={version:1,id,title,backend,taskType:request?.taskType,mode:request?.mode??'text',status:'preparing',startedAt:new Date(start).toISOString(),updatedAt:new Date(start).toISOString(),elapsedMs:0,model:{model:'deepseek-flash',reasoningEffort:'max'},policyActive:false,modelSelectionVerified:false,reply:'',draft:'',events:[],artifacts:[],error:null,timing:null,timeout:null,done:false};
+  const state={version:1,id,title,backend,taskType:request?.taskType,mode:request?.mode??'text',status:'preparing',startedAt:new Date(start).toISOString(),updatedAt:new Date(start).toISOString(),elapsedMs:0,model:{model:'deepseek-flash',reasoningEffort:'max'},policyActive:false,modelSelectionVerified:false,reply:'',draft:'',events:[],artifacts:[],error:null,errorDetails:null,errorEvidence:[],diagnosticRecovery:null,timing:null,timeout:null,done:false};
   const fileIO={mkdir,writeFile,rename,...io};
   const retryDelays=[40,120,300];
   const transientCodes=new Set(['EACCES','EPERM','EBUSY','EMFILE','ENFILE','EINTR','ETXTBSY','ENOENT']);
@@ -121,7 +136,8 @@ export async function createMonitor(request, {directory,io={},sleep=delay,heartb
     },
     finish(result){
       if(finishPromise)return finishPromise;
-      heartbeat.clearInterval(timer);state.done=true;state.status=result.ok?'completed':'failed';state.error=result.error??null;
+      heartbeat.clearInterval(timer);state.done=true;state.status=result.ok?'completed':'failed';state.error=typeof result.error==='string'?result.error:null;
+      state.errorDetails=safeErrorDetails(result.errorDetails);state.errorEvidence=safeErrorEvidence(result.errorEvidence);state.diagnosticRecovery=safeDiagnosticRecovery(result.diagnosticRecovery);
       timing(result.timing);state.timeout=safeTimeout(result.timeout);
       state.policyActive=!!result.policyActive;state.modelSelectionVerified=!!result.modelSelectionVerified;
       if(typeof result.final?.text==='string')state.reply=result.final.text.slice(0,cap);

@@ -121,6 +121,19 @@ test('stream observer preserves bytes and emits only counts for private reasonin
   assert.deepEqual(audit.filter(e=>e.event==='reply_stream').map(e=>e.text),['公开回复']);
 });
 
+test('non-success HTTP responses audit only status and the exact verified request identity',async t=>{
+  const f=await fixture(t);
+  for(const status of [401,429,503]) {
+    const req=request();await f.hooks.get('http.request')({...identity,request:req});
+    const response=new Response('PRIVATE_PROVIDER_BODY',{status,headers:{authorization:'PRIVATE_HEADER','x-request-id':'PRIVATE_ID'}});
+    const event={...identity,request:req,response};f.hooks.get('http.response')(event);
+    assert.equal(event.response,response);assert.equal(await response.text(),'PRIVATE_PROVIDER_BODY');
+  }
+  const audit=await f.audit(),errors=audit.filter(e=>e.event==='http_error');
+  assert.deepEqual(errors.map(e=>[e.sessionId,e.requestIndex,e.httpStatus]),[['ses_test',1,401],['ses_test',2,429],['ses_test',3,503]]);
+  assert.doesNotMatch(JSON.stringify(audit),/PRIVATE|authorization|headers|response|body/);
+});
+
 test('oversized and malformed SSE lines are skipped without altering transport',async()=>{
   const content='data: '+ 'x'.repeat(1000)+'\n\ndata: invalid\n\ndata: {"choices":[{"delta":{"content":"ok"}}]}\n\n';
   const events=[];const response=new Response(content);const observed=observeSSE(response.body,(...a)=>events.push(a),{maxLine:100});

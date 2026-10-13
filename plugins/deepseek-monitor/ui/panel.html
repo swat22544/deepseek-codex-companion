@@ -120,7 +120,7 @@
     .inline-empty { min-height: 180px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 9px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.75; }
     .inline-empty svg { width: 21px; height: 21px; color: var(--subtle); margin-bottom: 4px; }
     .inline-empty strong { font-weight: 500; color: var(--ink); }
-    .run-error { border: 1px solid color-mix(in srgb, var(--danger) 20%, var(--line)); color: var(--danger); background: var(--danger-bg); padding: 13px 15px; margin-bottom: 24px; border-radius: 7px; line-height: 1.75; overflow-wrap: anywhere; font-size: 12px; }
+    .run-error { border: 1px solid color-mix(in srgb, var(--danger) 20%, var(--line)); color: var(--danger); background: var(--danger-bg); padding: 13px 15px; margin-bottom: 24px; border-radius: 7px; line-height: 1.75; overflow-wrap: anywhere; white-space: pre-line; font-size: 12px; }
     .detail-head .run-error { margin: 12px 0 0; }
     .panel-caption { margin: 0 0 20px; color: var(--subtle); font-size: 11px; line-height: 1.7; }
     .events { list-style: none; padding: 0; margin: 0; }
@@ -289,14 +289,61 @@
       const statusLabel = (run) => run?.status === 'failed' && timeoutKind(run) ? (timeoutKind(run) === 'total' ? '总时限已到' : '无进展超时') : statusNames[run?.status] || '状态未知';
       const validMs = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
       const budgetLabel = (ms) => ms % 60000 === 0 ? `${ms / 60000} 分钟` : ms % 1000 === 0 ? `${ms / 1000} 秒` : `${ms} 毫秒`;
+      const errorTypeNames = {
+        unknown: '调用失败，具体错误类型未确认', aborted: '调用已取消', 'permission.rejected': '所需权限被拒绝', 'tool.execution': '工具执行失败',
+        'provider.rate-limit': '模型服务触发限流', 'provider.auth': '模型服务认证失败', 'provider.quota': '模型服务额度不足', 'provider.content-filter': '模型服务拒绝了内容',
+        'provider.transport': '与模型服务的通信失败', 'provider.internal': '模型服务内部错误', 'provider.invalid-output': '模型服务返回无效输出', 'provider.invalid-request': '模型服务拒绝了请求参数',
+        'provider.unsupported-operation': '模型服务不支持此次操作', 'provider.no-route': '没有可用的模型服务路由', 'provider.unknown': '模型服务返回未分类错误', 'provider.timeout': '模型服务请求超时'
+      };
+      const errorReasonNames = {
+        connection_reset: '连接被重置', connection_refused: '连接被拒绝', dns_failure: 'DNS 解析失败', tls_failure: 'TLS 连接失败', stream_interrupted: '响应流中断',
+        request_timeout: '请求等待超时', rate_limited: '请求受到限流', quota_exceeded: '服务额度不足', context_length_exceeded: '上下文长度超出限制',
+        missing_reasoning_content: '请求缺少必需的推理内容字段', invalid_tool_call: '工具调用格式无效', invalid_api_key: 'API 密钥无效', permission_denied: '服务拒绝权限', cancelled: '请求已取消', provider_unavailable: '模型服务暂不可用'
+      };
+      const diagnosticNames = { not_needed: '无需恢复', skipped: '未执行恢复', recovered: '已恢复错误详情', unavailable: '错误详情不可用', failed: '恢复失败', timed_out: '恢复超时' };
+      const errorSourceNames = { cli: 'CLI', http: 'HTTP 响应', session: '会话记录' };
+      function errorDescription(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.source !== 'string' || !Object.hasOwn(errorSourceNames, value.source)) return [];
+        const type = typeof value.type === 'string' && Object.hasOwn(errorTypeNames, value.type) ? value.type : 'unknown';
+        const reason = typeof value.reason === 'string' && Object.hasOwn(errorReasonNames, value.reason) ? errorReasonNames[value.reason] : '';
+        const metadata = [`类型 ${type}`];
+        if (Number.isInteger(value.httpStatus) && value.httpStatus >= 100 && value.httpStatus <= 599) metadata.push(`HTTP ${value.httpStatus}`);
+        metadata.push(`来源 ${errorSourceNames[value.source]}`);
+        return [errorTypeNames[type] + (reason ? `：${reason}` : ''), metadata.join(' · ')];
+      }
+      function diagnosticDescription(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.status !== 'string' || !Object.hasOwn(diagnosticNames, value.status) || !Number.isSafeInteger(value.checkedMessages) || value.checkedMessages < 0) return '';
+        return `诊断：${diagnosticNames[value.status]} · 已检查 ${value.checkedMessages} 条消息`;
+      }
+      function evidenceDescriptions(value, primary) {
+        if (!Array.isArray(value)) return [];
+        const out = [], seen = new Set([primary.join('\n')]);
+        let accepted = 0;
+        for (const item of value) {
+          const description = errorDescription(item);
+          if (!description.length) continue;
+          const key = description.join('\n');
+          if (!seen.has(key)) { seen.add(key); out.push(`补充证据（${errorSourceNames[item.source]}）\n${key}`); }
+          if (++accepted === 3) break;
+        }
+        return out;
+      }
       function runError(run) {
         if (run.observationStale || run.status === 'interrupted') return '监看记录已中断；这不等于模型失败。请由主代理检查本次结果文件和进程状态。';
         const kind = timeoutKind(run);
+        const lines = [];
         if (kind && run.status === 'failed') {
           const limit = validMs(run.timeout.limitMs) ? `（${budgetLabel(run.timeout.limitMs)}）` : '';
-          return kind === 'total' ? `达到总任务时限${limit}，运行器已停止本次调用。已产生的内容仍需主代理核验。` : `长时间未收到有效进展${limit}，运行器已停止本次调用。这表示观察到的进展超时，不能据此确认网络故障或模型卡死。`;
+          lines.push(kind === 'total' ? `达到总任务时限${limit}，运行器已停止本次调用。已产生的内容仍需主代理核验。` : `长时间未收到有效进展${limit}，运行器已停止本次调用。这表示观察到的进展超时，不能据此确认网络故障或模型卡死。`);
         }
-        return text(run.error, text(run.error?.message));
+        const detail = errorDescription(run.errorDetails);
+        if (detail.length && run.status === 'failed') lines.push(...detail);
+        else if (!lines.length && typeof run.error === 'string' && run.error) lines.push(run.error);
+        else if (!lines.length && run.status === 'failed') lines.push('调用未完成，未提供可显示的错误详情。');
+        if (run.status === 'failed') lines.push(...evidenceDescriptions(run.errorEvidence, detail));
+        const diagnostic = diagnosticDescription(run.diagnosticRecovery);
+        if (diagnostic && run.status === 'failed') lines.push(diagnostic);
+        return lines.join('\n');
       }
       let timer = null, toastTimer = null, controller = null, listSignature = '', detailSignature = '', eventsSignature = '', artifactsSignature = '', scrollScheduled = false;
       let token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
@@ -339,7 +386,7 @@
       function ensureBridge() {
         if (window.parent === window) return Promise.reject(new Error('请从 Codex 或本地监看地址打开面板。'));
         if (!bridgePromise) {
-          bridgePromise = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.1.0' }, appCapabilities: {} })
+          bridgePromise = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.1.1' }, appCapabilities: {} })
             .then(() => {
               rpcNotify('ui/notifications/initialized', {});
               rpcNotify('ui/notifications/size-changed', { height: Math.max(560, Math.min(800, window.innerHeight || 720)) });

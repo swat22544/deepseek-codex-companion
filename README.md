@@ -6,7 +6,7 @@
 
 适合代码审查、局部故障分析、方案比较、测试设计、资料整理，以及候选补丁和文档的起草。DeepSeek 可以深入参与一个明确的子任务，但始终由主代理调度。
 
-当前插件版本：**1.1.0**；Skill 修订：**`2026-10-14-dual-backend`**。默认使用 Harness，有两个独立工作包时可由 Harness 与 OpenCode 各承担一路，两路都可以根据主代理反馈继续迭代。权限和验收标准相同，中型任务默认总预算二十分钟，大型四十五分钟，分别限制无进展时间。监看列表与详情标明来源，保留保存失败重试和恢复机制。[阅读 DeepSeek 受控辅助能力评估](docs/deepseek-capability-evaluation-2026-10-13.md)，了解已评估的 Harness／模型组合及其适用边界。
+当前插件版本：**1.1.1**；Skill 修订：**`2026-10-14-safe-diagnostics`**。默认使用 Harness，有两个独立工作包时可由 Harness 与 OpenCode 各承担一路，两路都可以根据主代理反馈继续迭代。中型任务默认总预算二十分钟，大型四十五分钟，分别限制无进展时间。监看标明来源，并展示安全过滤后的 OpenCode 错误类型、HTTP 状态及诊断来源。[阅读 DeepSeek 受控辅助能力评估](docs/deepseek-capability-evaluation-2026-10-13.md)，了解已评估的 Harness／模型组合及其适用边界。
 
 ![DeepSeek 实时监看面板](docs/monitor-preview.jpg)
 
@@ -252,6 +252,20 @@ node "<CODEX_HOME>/skills/deepseek-helper/scripts/verify-result.mjs" "绝对路�
 本地请求、结果、快照和候选文件位于工作目录的 `work/`，其中 Harness 使用 `work/deepseek-runs/task-*/`，OpenCode 使用 `work/deepseek-runs/opencode-*/`。这些目录和监看记录目前没有自动保留期限；在相关调用结束后可按需手动清理。`<CODEX_HOME>/deepseek-monitor/server.json` 及可选的 `service-config.json` 含本机服务访问令牌，应留在本机。
 
 ## 验证与已知限制
+
+### 1.1.1 的安全错误诊断
+
+此前所有 OpenCode CLI 错误都被压缩为 `runtime/provider error`，会丢失区分连接、认证、限流、响应格式等问题所需的证据。现在结果与监看详情保留 `errorDetails`：白名单 `type`、整数 `httpStatus`、`source` 和固定原因分类 `reason`。错误正文、响应体、请求头、地址、凭据和隐藏推理不进入诊断字段；未知类型归为 `unknown`，没有 HTTP 证据时保持 `null`。
+
+CLI 错误优先在收到时保存；HTTP 错误和已有会话可提供独立来源的补充证据，不把不同请求的字段拼接为同一个原因。需要补充时，只查询本次会话，采用独立短时限，不重跑模型、不续期任务、不将原失败改写成成功。查询状态通过 `diagnosticRecovery` 表达。当前仍保留遇错停止的策略，不增加自动重试或切换后端。
+
+`errorEvidence` 最多保留三条独立证据，避免 CLI 有类型但缺状态时丢掉实际观察到的 HTTP 错误。补充查询共享 5 秒预算，身份核对后最多三页、每页 20 条消息；执行计时先冻结，查询进程的退出清理最多另需约 7 秒。
+
+旧版任务没有保存原始详情时，升级不能反推其真实原因。总任务时限、无进展时限、上游请求超时以及本地监看保存错误也应分别判断。使用方法见[错误诊断说明](skills/deepseek-helper/references/diagnostics.md)，本次故障测试与真实调用结果见[1.1.1 验证记录](docs/error-diagnostics-validation-2026-10-14.md)。
+
+1.1.1 的 **147 项自动化测试全部通过**，插件与 Skill 已完成本地安装及文件一致性检查。安装后的一次真实 OpenCode Flash / Max 候选交付约用时 10.1 秒，包含三次模型请求和两次受限工具调用；候选代码通过 22 个独立输入用例，清理与监看保存正常。安全诊断故障注入和真实成功调用分别记录，不据此推断旧失败的根因。
+
+### 运行测试与历史验证
 
 在仓库根目录执行：
 

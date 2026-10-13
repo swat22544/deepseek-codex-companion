@@ -144,7 +144,12 @@ export function createOpenCodeGuard({policyPath=process.env.CODEX_OPENCODE_POLIC
     await hook('http.response',event=>{
       scope(event);const index=requests.get(event.request);
       if(!index)reject('unmatched_response');
-      if(!event.response?.ok||!event.response.body)return;
+      if(!event.response?.ok){
+        const status=event.response?.status;
+        if(Number.isInteger(status)&&status>=100&&status<=599)emit('http_error',{sessionId,requestIndex:index,httpStatus:status});
+        return;
+      }
+      if(!event.response.body)return;
       if(!event.response.headers.get('content-type')?.toLowerCase().includes('text/event-stream'))reject('response_format');
       const audit=createStreamAudit(emit,{sessionId,requestIndex:index});
       const body=observeSSE(event.response.body,audit.delta,{onEnd:audit.finish});

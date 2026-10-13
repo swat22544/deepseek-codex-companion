@@ -59,6 +59,8 @@ OpenCode 适配基于 CLI **2.0.28**，使用后台 CLI 和独立受控会话，
 
 ## 检查结果
 
+从 1.1.1 起，OpenCode 结果还包含安全的 `errorDetails` 和 `diagnosticRecovery`，用于区分已记录的错误类型、HTTP 状态、来源及只读补充诊断。旧记录缺失时不补造；含义与失败处理见 [错误诊断](diagnostics.md)。
+
 结果是待核验候选；调用完成、格式符合要求和内容可采用应分别判断。分项方法见 [verification.md](verification.md)，可选机械检查命令及 JSON 契约见 [verification-contract.md](verification-contract.md)。契约文件仅供主代理本地检查，不是运行器请求中的新字段，也不必把独立答案交给模型。
 
 结果 JSON 保留旧字段 `ok/trust/verificationRequired/modelSelection/sessionId/final`，另含 `backend`、`mode`、`modelRequests`、`toolCalls`、`toolResults`、`toolAudit`、`cleanup`、`runDirectory`、`snapshots` 和 `artifacts`。OpenCode 调用还要求 `runtimeEvidenceVerified: true`；这与配置中选择模型不同，表示适配器已核对实际运行证据。`backend` 应与本次请求一致；旧结果缺字段时按 Harness 协议检查。结果的 `timing` 是已解析预算、规模依据与进展计时，`timeout` 未触发时为 `null`，触发时含 `kind: "total" | "idle"`、限值和经过时间；旧记录缺少计时字段不代表损坏。

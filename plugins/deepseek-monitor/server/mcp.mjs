@@ -19,7 +19,7 @@ async function handle(m){
  if(typeof m.id!=='string'&&typeof m.id!=='number'){errorReply(null,-32600,'Invalid request id');return;}
  try {
   let result;
-  if(m.method==='initialize')result={protocolVersion:['2024-11-05','2025-03-26','2025-06-18','2025-11-25'].includes(m.params?.protocolVersion)?m.params.protocolVersion:'2025-06-18',capabilities:{tools:{},resources:{}},serverInfo:{name:'deepseek-monitor',version:'1.1.0'}};
+  if(m.method==='initialize')result={protocolVersion:['2024-11-05','2025-03-26','2025-06-18','2025-11-25'].includes(m.params?.protocolVersion)?m.params.protocolVersion:'2025-06-18',capabilities:{tools:{},resources:{}},serverInfo:{name:'deepseek-monitor',version:'1.1.1'}};
   else if(m.method==='ping')result={};
   else if(m.method==='tools/list')result={tools};
   else if(m.method==='resources/list')result={resources:[{uri,name:'DeepSeek Monitor',mimeType:'text/html;profile=mcp-app'}]};

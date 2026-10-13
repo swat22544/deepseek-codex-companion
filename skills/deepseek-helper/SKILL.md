@@ -2,7 +2,7 @@
 name: deepseek-helper
 description: 在中等开发任务的多个阶段主动通过本机 DeepSeek Harness 与 OpenCode 协作，可并行委派独立的候选实现、测试、局部重构、故障分析与审查，再根据验证反馈续作。主代理控制后端、范围、执行和采纳，分别核验代码、说明、引用与测试预期。
 metadata:
-  revision: "2026-10-14-dual-backend"
+  revision: "2026-10-14-safe-diagnostics"
 ---
 
 # DeepSeek 受控协作
@@ -96,6 +96,8 @@ node "<本技能目录>/scripts/delegate.mjs" "绝对路径/request.json" "绝�
 格式问题先保留原始回复并判为未遵约；主代理若能确定性修复，应另存派生结果、注明修复后再核验，不暗中删文字或抽取片段后宣称原始交付合格。确定性脚本能直接完成的内容，不为让模型“补考通过”而重复调用。
 
 超时先读取 `result.timeout.kind`，区分总预算耗尽与没有可确认进展，并查看 `result.timing`、已有候选及清理状态。登录、额度或策略失败也先诊断；只有原因已修复、预算经主代理重新评估、任务已拆分或范围明确调整时才发起新调用。连续无进展、无法独立核验、所需权限超出范围时由主代理接手，不无限重试或放宽权限。`cleanup.incomplete=true` 时先处理残留进程，再开展后续调用。
+
+OpenCode 失败时优先查看 `errorDetails` 的安全错误类型、HTTP 状态与来源，以及 `diagnosticRecovery` 的补充查询状态；按需读 [错误诊断](references/diagnostics.md)。诊断查询不会重跑模型或续期任务。类型未知、状态缺失或历史记录没有详情时如实说明，不能仅凭“runtime/provider error”断言断网、密钥失效或预算不足。分类信息用于判断下一步，不证明根因，也不授予自动重试、切后端或修改凭据的权限。
 
 监看只展示公开回复与筛选后的活动，不能作为完成或正确性的唯一依据。若 `result.monitor.available=false`、心跳中断或界面仍显示运行中，先读取本次结果 JSON 和进程状态；模型已完成就继续核验，不因监看失效重复模型请求。说明可见性问题，保留 `result.monitor.path` 便于诊断，不分享带令牌的监看 URL。
 

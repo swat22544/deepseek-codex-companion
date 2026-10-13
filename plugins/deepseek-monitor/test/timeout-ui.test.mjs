@@ -84,3 +84,81 @@ test('backend list source distinguishes same-title tasks and can be searched',()
  p.state.query='';p.state.runs[1].backend='harness';p.renderList();
  assert.match(buttons()[1].title,/Harness/);
 });
+
+test('failure card renders allowlisted Chinese reason, type, HTTP, source and recovery',()=>{
+ const p=render({...base(),status:'failed',error:'PRIVATE_RAW_PROVIDER_ERROR',errorDetails:{type:'provider.invalid-request',httpStatus:400,source:'session',reason:'missing_reasoning_content',message:'PRIVATE',headers:{Authorization:'PRIVATE'},body:'PRIVATE',url:'PRIVATE'},diagnosticRecovery:{status:'recovered',checkedMessages:3,path:'PRIVATE'}});
+ const card=p.node('run-error');
+ assert.equal(card.hidden,false);
+ assert.match(card.textContent,/模型服务拒绝了请求参数：请求缺少必需的推理内容字段/);
+ assert.match(card.textContent,/类型 provider\.invalid-request · HTTP 400 · 来源 会话记录/);
+ assert.match(card.textContent,/诊断：已恢复错误详情 · 已检查 3 条消息/);
+ assert.equal(card.textContent.includes('PRIVATE'),false);
+});
+
+test('unknown structured errors cannot inject strings, objects or prototype properties into UI',()=>{
+ for(const type of ['PRIVATE_UNKNOWN','constructor','__proto__',{toString:'PRIVATE'},['provider.auth']]){
+  const p=render({...base(),status:'failed',error:{message:'PRIVATE'},errorDetails:{type,httpStatus:'PRIVATE',source:'cli',reason:{toString:'PRIVATE'},body:'PRIVATE'},diagnosticRecovery:{status:'constructor',checkedMessages:0,message:'PRIVATE'}});
+  const value=p.node('run-error').textContent;
+  assert.match(value,/具体错误类型未确认/);assert.match(value,/类型 unknown.*来源 CLI/);
+  for(const marker of ['PRIVATE','[object','function','诊断：','HTTP '])assert.equal(value.includes(marker),false);
+ }
+ const malformed=render({...base(),status:'failed',error:{message:'PRIVATE'},errorDetails:{type:'provider.auth',source:{toString:'PRIVATE'}}});
+ assert.equal(malformed.node('run-error').textContent,'调用未完成，未提供可显示的错误详情。');
+});
+
+test('HTTP codes and recovery labels display validated values without inventing omitted details',()=>{
+ const statuses={not_needed:'无需恢复',skipped:'未执行恢复',recovered:'已恢复错误详情',unavailable:'错误详情不可用',failed:'恢复失败',timed_out:'恢复超时'};
+ for(const [status,label]of Object.entries(statuses)){
+  const p=render({...base(),status:'failed',errorDetails:{type:'provider.auth',httpStatus:401,source:'http',reason:'invalid_api_key'},diagnosticRecovery:{status,checkedMessages:0}});
+  assert.match(p.node('run-error').textContent,/模型服务认证失败：API 密钥无效/);
+  assert.match(p.node('run-error').textContent,/HTTP 401 · 来源 HTTP 响应/);
+  assert.ok(p.node('run-error').textContent.includes(`诊断：${label} · 已检查 0 条消息`));
+ }
+ for(const httpStatus of [null,99,600,400.2,'401',{}]){
+  const p=render({...base(),status:'failed',errorDetails:{type:'unknown',source:'cli',httpStatus},diagnosticRecovery:{status:'recovered',checkedMessages:'3'}});
+  assert.equal(p.node('run-error').textContent.includes('HTTP '),false);
+  assert.equal(p.node('run-error').textContent.includes('诊断：'),false);
+ }
+});
+
+test('legacy generic failures remain readable and completed/interrupted states are preserved',()=>{
+ const message='OpenCode reported a runtime/provider error.';
+ const legacy=render({...base(),status:'failed',error:message});
+ assert.equal(legacy.node('run-error').textContent,message);
+ const completed=render({...base(),status:'completed',diagnosticRecovery:{status:'not_needed',checkedMessages:0}});
+ assert.equal(completed.node('run-error').hidden,true);assert.equal(completed.node('task-status').textContent,'待主代理复核');
+ const interrupted=render({...base(),status:'interrupted',errorDetails:{type:'provider.auth',source:'cli',httpStatus:401}});
+ assert.match(interrupted.node('run-error').textContent,/监看记录已中断.*不等于模型失败/);
+ assert.equal(interrupted.node('run-error').textContent.includes('认证失败'),false);
+});
+
+test('diagnostic recovery timeout does not turn a provider error into a task timeout',()=>{
+ const p=render({...base(),status:'failed',errorDetails:{type:'provider.transport',source:'session',httpStatus:null,reason:'connection_reset'},diagnosticRecovery:{status:'timed_out',checkedMessages:2}});
+ assert.equal(p.node('task-status').textContent,'失败');
+ assert.match(p.node('run-error').textContent,/通信失败：连接被重置/);
+ assert.match(p.node('run-error').textContent,/诊断：恢复超时/);
+ assert.equal(p.node('run-error').textContent.includes('总任务时限'),false);
+});
+
+test('error evidence preserves independent sources and omits the repeated primary diagnosis',()=>{
+ const cli={type:'provider.transport',httpStatus:null,source:'cli',reason:'connection_reset'};
+ const http={type:'unknown',httpStatus:502,source:'http',reason:null};
+ const session={type:'provider.invalid-request',httpStatus:400,source:'session',reason:'missing_reasoning_content'};
+ const p=render({...base(),status:'failed',errorDetails:cli,errorEvidence:[cli,http,session]});
+ const value=p.node('run-error').textContent;
+ assert.equal(value.match(/类型 provider\.transport/g).length,1);
+ assert.match(value,/类型 provider\.transport · 来源 CLI\n补充证据（HTTP 响应）/);
+ assert.match(value,/类型 unknown · HTTP 502 · 来源 HTTP 响应\n补充证据（会话记录）/);
+ assert.match(value,/类型 provider\.invalid-request · HTTP 400 · 来源 会话记录/);
+ assert.equal(value.includes('类型 provider.transport · HTTP'),false);
+});
+
+test('error evidence ignores malicious fields, malformed containers and extra records',()=>{
+ const p=render({...base(),status:'failed',errorDetails:{type:'provider.transport',source:'cli'},errorEvidence:[null,{source:'PRIVATE'},{source:{toString:'PRIVATE'}},{source:'http',type:{toString:'PRIVATE'},httpStatus:503,reason:'PRIVATE',message:'PRIVATE',body:'PRIVATE'},{source:'session',type:'constructor',httpStatus:'401',reason:{toString:'PRIVATE'}},{source:'cli',type:'provider.quota',httpStatus:402},{source:'http',type:'provider.auth',httpStatus:401}]});
+ const value=p.node('run-error').textContent;
+ assert.equal(value.includes('PRIVATE'),false);assert.equal(value.includes('constructor'),false);
+ assert.equal(value.includes('HTTP 401'),false);assert.equal(value.includes('provider.auth'),false);
+ assert.match(value,/类型 unknown · HTTP 503 · 来源 HTTP 响应/);
+ assert.equal(value.match(/补充证据/g).length,3);
+ for(const errorEvidence of [null,{},'PRIVATE'])assert.equal(render({...base(),status:'failed',errorEvidence}).node('run-error').textContent,'调用未完成，未提供可显示的错误详情。');
+});

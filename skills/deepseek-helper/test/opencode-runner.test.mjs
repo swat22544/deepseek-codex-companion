@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {buildOpenCodeConfig,verifyRuntimeEvidence,runOwned,assertCleanGlobalConfig,AGENT} from '../scripts/opencode-runner.mjs';
 import {validateRequest} from '../scripts/helper-policy.mjs';
 import {delegate} from '../scripts/delegate.mjs';
+import {classifyError} from '../scripts/opencode-errors.mjs';
 
 test('unknown backends never silently enter Harness',async()=>{
   const request={taskType:'draft',instruction:'Bounded task',input:''};
@@ -44,6 +45,17 @@ test('owned child captures success, rejects failures and refuses output over bud
 
 test('owned child is killed on watchdog expiry and reports its cleanup',async()=>{
   await assert.rejects(()=>runOwned(process.execPath,['-e','setInterval(()=>{},1000)'],{limitMs:150}),e=>e.cleanup.requested===true&&e.cleanup.treeKillConfirmed===true&&e.cleanup.incomplete===false&&/timed out/.test(e.message));
+});
+
+test('injected CLI error is classified before controlled process cleanup without persisting its payload',async()=>{
+  let details=null;
+  const event={type:'error',sessionID:'ses_fixture',error:{type:'provider.invalid-request',status:400,message:'Missing reasoning_content; PRIVATE_KEY',response:{body:'PRIVATE_REQUEST'},headers:{authorization:'PRIVATE_HEADER'}}};
+  const script='process.stdout.write('+JSON.stringify(JSON.stringify(event)+'\n')+');setInterval(()=>{},1000)';
+  await assert.rejects(()=>runOwned(process.execPath,['-e',script],{onLine:line=>{
+    const parsed=JSON.parse(line);details=classifyError(parsed.error,'cli');throw new Error('OpenCode reported a runtime/provider error.');
+  }}),e=>e.message==='OpenCode reported a runtime/provider error.'&&e.cleanup.requested&&e.cleanup.treeKillConfirmed&&!e.cleanup.incomplete);
+  assert.deepEqual(details,{type:'provider.invalid-request',httpStatus:400,source:'cli',reason:'missing_reasoning_content'});
+  assert.doesNotMatch(JSON.stringify(details),/PRIVATE|headers|response|message/);
 });
 
 test('system plugins fail closed without reading their contents',async()=>{

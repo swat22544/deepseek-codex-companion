@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "deepseek-monitor",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "在 Codex 内实时查看本机 DeepSeek 辅助任务的公开回复、工具活动与状态。",
   "author": {
     "name": "DeepSeek Codex Companion"

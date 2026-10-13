@@ -11,6 +11,7 @@ import {resolveOpenCodePaths} from './runtime-paths.mjs';
 import {resolveTimeoutPolicy,createProgressClock} from './timeout-policy.mjs';
 import {evaluateDeadline} from './supervised-runner.mjs';
 import {createMonitor} from './live-monitor.mjs';
+import {classifyError,hasUsefulDiagnostic,recoverErrorDiagnostic,isRecoveryEligible} from './opencode-errors.mjs';
 
 const here=dirname(fileURLToPath(import.meta.url));
 export const OPEN_CODE_MODEL=Object.freeze({provider:'deepseek',model:'deepseek-flash',reasoningEffort:'max'});
@@ -166,6 +167,7 @@ async function runDelegate(request,monitor) {
   Object.assign(env,{OPENCODE_CONFIG_DIR:configDir,OPENCODE_DISABLE_PROJECT_CONFIG:'1',OPENCODE_CONFIG_PROJECT_DISABLE:'1',CODEX_OPENCODE_POLICY:policyPath});
   const evidenceEnv={...env,OPENCODE_CONFIG_DIR:evidenceDir};delete evidenceEnv.CODEX_OPENCODE_POLICY;
   let policyActive=false,mcpActive=tools.length===0,sessionId=null,modelRequests=0,modelSelection=null,runtimeEvidenceVerified=false,final=null,stopReason=null,failure=null,timeout=null,exitCode=null,guardSeq=0;
+  let errorDetails=null,cliErrorDetails=null,httpErrorDetails=null,cliErrorSeen=false,verifiedSessionId=null,diagnosticRecovery={status:'not_needed',checkedMessages:0};
   let cleanup={requested:false,treeKillConfirmed:false,incomplete:false},lastRequest=0,streamAttempt=null,mcpPid=null,mcpGone=false;
   const alive=pid=>{try{process.kill(pid,0);return true;}catch(e){return e.code!=='ESRCH';}};
   const calls=new Map(),toolResults=[],toolAudit=[];
@@ -177,7 +179,13 @@ async function runDelegate(request,monitor) {
     else if(e.event==='model'){
       if(!policyActive||Object.keys(OPEN_CODE_MODEL).some(k=>e[k]!==OPEN_CODE_MODEL[k])||e.requestIndex!==modelRequests+1)throw new Error('OpenCode model request mismatch.');
       setSession(e.sessionId);modelRequests++;lastRequest=e.requestIndex;modelSelection=OPEN_CODE_MODEL;clock.markProgress('model_start');monitor.control(e);
+      verifiedSessionId=e.sessionId;
+      // An HTTP failure from an earlier retry cannot explain a later request.
+      httpErrorDetails=null;
       streamAttempt='request-'+e.requestIndex;monitor.control({event:'reply_stream',type:'start',attemptId:streamAttempt});
+    }else if(e.event==='http_error'){
+      if(!policyActive||e.sessionId!==sessionId||e.requestIndex!==lastRequest||!Number.isInteger(e.httpStatus)||e.httpStatus<100||e.httpStatus>599)throw new Error('Invalid OpenCode HTTP error evidence.');
+      httpErrorDetails=classifyError({status:e.httpStatus},'http');
     }else if(e.event==='progress'){
       if(!policyActive||e.sessionId!==sessionId||e.requestIndex!==lastRequest||!Number.isInteger(e.charCount)||e.charCount<=0)throw new Error('Invalid OpenCode progress evidence.');
       clock.markProgress('model_output');
@@ -222,8 +230,11 @@ async function runDelegate(request,monitor) {
       cwd,env,clock,check,limitMs:budget.totalTimeoutMs,
       onLine:line=>{
         let e;try{e=JSON.parse(line);}catch{throw new Error('Non-JSON output from OpenCode.');}
-        if(e.type==='error')throw new Error('OpenCode reported a runtime/provider error.');
         if(e.sessionID)setSession(e.sessionID);
+        if(e.type==='error'){
+          cliErrorSeen=true;errorDetails=cliErrorDetails=classifyError(e.error,'cli');
+          throw new Error('OpenCode reported a runtime/provider error.');
+        }
         if(e.type==='step_start')monitor.harness({type:'status',phase:'step_start'});
         // CLI may include private reasoning. Never copy it to a result or log.
       },
@@ -262,9 +273,37 @@ async function runDelegate(request,monitor) {
         }catch{cleanup={requested:true,treeKillConfirmed:false,incomplete:true};failure??='OpenCode helper process cleanup could not be confirmed.';}
       }
     }
-    try{await readGuard.finish();await readTools.finish();}catch(e){failure??=e.message;}
+    try{await readGuard.finish();await readTools.finish();}catch(e){auditError??=e;failure??=e.message;}
   }
+  const executionTiming=timing(),executionElapsedMs=Date.now()-start;
+  // Diagnose only after the task and its tools have stopped. These read-only
+  // calls use a separate short limit and no failed task watchdog or guard hook.
+  // Keep each source record intact: never stitch status/reason across requests.
+  if(failure&&!timeout&&!auditError&&!hasUsefulDiagnostic(errorDetails)&&httpErrorDetails)errorDetails=httpErrorDetails;
+  const diagnosticOperations=[];
+  const diagnosticQuery=(operation,params,limitMs)=>{
+    if(!['session.get','session.message.list'].includes(operation))throw new Error('Invalid diagnostic operation.');
+    const args=['api',operation,'--standalone'];for(const [key,value]of Object.entries(params))args.push('--param',`${key}=${value}`);
+    const pending=runOwned(executable,args,{cwd,env:evidenceEnv,limitMs,maxBytes:4*1024*1024}).then(r=>JSON.parse(r.output)).catch(e=>{
+      if(e.cleanup?.requested||e.cleanup?.incomplete)cleanup={
+        requested:cleanup.requested||e.cleanup.requested===true,
+        treeKillConfirmed:!cleanup.incomplete&&(!cleanup.requested||cleanup.treeKillConfirmed)&&e.cleanup.treeKillConfirmed===true,
+        incomplete:cleanup.incomplete||e.cleanup.incomplete===true,
+      };
+      if(e.message==='OpenCode control operation timed out.')throw Object.assign(new Error('Diagnostic lookup timed out.'),{diagnosticTimeout:true});
+      throw new Error('Diagnostic lookup failed.');
+    });
+    diagnosticOperations.push(pending);return pending;
+  };
+  ({errorDetails,diagnosticRecovery}=await recoverErrorDiagnostic({
+    failed:!!failure,eligible:isRecoveryEligible({failed:!!failure,timeout,auditError,policyActive,mcpActive,modelRequests,sessionID:sessionId,verifiedSessionID:verifiedSessionId,cleanup,cliErrorSeen,exitCode}),details:errorDetails,
+    sessionID:sessionId,agent:AGENT,model:{providerID:OPEN_CODE_MODEL.provider,id:OPEN_CODE_MODEL.model,variant:OPEN_CODE_MODEL.reasoningEffort},location:cwd,query:diagnosticQuery,
+  }));
+  // A diagnostic deadline can win before the CLI watchdog has completed its
+  // owned-tree cleanup. Join that cleanup; never leave a query process behind.
+  await Promise.allSettled(diagnosticOperations);
+  const errorEvidence=[cliErrorDetails,httpErrorDetails,errorDetails?.source==='session'?errorDetails:null].filter(Boolean);
   const artifacts=[];
   for(const name of await readdir(artifactDir)){const path=join(artifactDir,name),stat=await lstat(path);if(!stat.isFile()||stat.isSymbolicLink())throw new Error('Unexpected candidate artifact.');const bytes=await readFile(path);artifacts.push({name,path,bytes:bytes.length,sha256:hash(bytes),trust:'unverified_candidate'});}
-  return {ok:!failure&&runtimeEvidenceVerified,backend:'opencode',trust:'unverified_candidate',verificationRequired:true,taskType:request.taskType,mode:request.mode,elapsedMs:Date.now()-start,timing:timing(),timeout,exitCode,policyActive:policyActive&&mcpActive,modelSelectionVerified:modelRequests>0,modelSelection,modelRequests,runtimeEvidenceVerified,sessionId,stopReason,final,toolCalls:[...calls.values()],toolResults,toolAudit,cleanup,error:failure,runDirectory:cwd,snapshots:files.map(({content,...metadata})=>metadata),artifacts};
+  return {ok:!failure&&runtimeEvidenceVerified,backend:'opencode',trust:'unverified_candidate',verificationRequired:true,taskType:request.taskType,mode:request.mode,elapsedMs:executionElapsedMs,timing:executionTiming,timeout,exitCode,policyActive:policyActive&&mcpActive,modelSelectionVerified:modelRequests>0,modelSelection,modelRequests,runtimeEvidenceVerified,sessionId,stopReason,final,toolCalls:[...calls.values()],toolResults,toolAudit,cleanup,error:failure,errorDetails,errorEvidence,diagnosticRecovery,runDirectory:cwd,snapshots:files.map(({content,...metadata})=>metadata),artifacts};
 }

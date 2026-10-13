@@ -12,6 +12,10 @@ export async function getRun(id,root=dataRoot){
   if(r.id!==id||r.version!==1)throw new Error('Invalid run record');
   // Legacy records came from Harness; do not expose arbitrary backend metadata.
   r.backend=safeBackend(r.backend);
+  if(Object.hasOwn(r,'error')&&typeof r.error!=='string')r.error=null;
+  if(Object.hasOwn(r,'errorDetails'))r.errorDetails=safeErrorDetails(r.errorDetails);
+  if(Object.hasOwn(r,'errorEvidence'))r.errorEvidence=safeErrorEvidence(r.errorEvidence);
+  if(Object.hasOwn(r,'diagnosticRecovery'))r.diagnosticRecovery=safeDiagnosticRecovery(r.diagnosticRecovery);
   if(!r.done&&Date.now()-Date.parse(r.updatedAt)>15000)return {...r,status:'interrupted',observationStale:true,error:'超过 15 秒未收到监看记录更新；这不等于模型失败。请由主代理检查本次结果文件和进程状态。'};
   return r;
 }
@@ -36,12 +40,30 @@ function safeTimeout(value){
   }
   return out;
 }
+const errorTypes=new Set(['unknown','aborted','permission.rejected','tool.execution','provider.rate-limit','provider.auth','provider.quota','provider.content-filter','provider.transport','provider.internal','provider.invalid-output','provider.invalid-request','provider.unsupported-operation','provider.no-route','provider.unknown','provider.timeout']);
+const errorReasons=new Set(['connection_reset','connection_refused','dns_failure','tls_failure','stream_interrupted','request_timeout','rate_limited','quota_exceeded','context_length_exceeded','missing_reasoning_content','invalid_tool_call','invalid_api_key','permission_denied','cancelled','provider_unavailable']);
+const recoveryStatuses=new Set(['not_needed','skipped','recovered','unavailable','failed','timed_out']);
+function safeErrorDetails(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)||!['cli','http','session'].includes(value.source))return null;
+  return {type:errorTypes.has(value.type)?value.type:'unknown',httpStatus:Number.isInteger(value.httpStatus)&&value.httpStatus>=100&&value.httpStatus<=599?value.httpStatus:null,source:value.source,reason:errorReasons.has(value.reason)?value.reason:null};
+}
+function safeErrorEvidence(value){
+  if(!Array.isArray(value))return [];
+  const out=[];for(const item of value){const detail=safeErrorDetails(item);if(detail)out.push(detail);if(out.length===3)break;}return out;
+}
+function safeDiagnosticRecovery(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)||!recoveryStatuses.has(value.status)||!Number.isSafeInteger(value.checkedMessages)||value.checkedMessages<0)return null;
+  return {status:value.status,checkedMessages:value.checkedMessages};
+}
 export function summary(r){
   const {id,title,status,mode,taskType,startedAt,updatedAt,elapsedMs,model,policyActive,modelSelectionVerified}=r;
   const result={id,title,backend:safeBackend(r.backend),status,mode,taskType,startedAt,updatedAt,elapsedMs,model,policyActive,modelSelectionVerified};
   const timing=safeTiming(r.timing),timeout=safeTimeout(r.timeout);
   if(timing!==undefined)result.timing=timing;
   if(timeout!==undefined)result.timeout=timeout;
+  if(Object.hasOwn(r,'errorDetails'))result.errorDetails=safeErrorDetails(r.errorDetails);
+  if(Object.hasOwn(r,'errorEvidence'))result.errorEvidence=safeErrorEvidence(r.errorEvidence);
+  if(Object.hasOwn(r,'diagnosticRecovery'))result.diagnosticRecovery=safeDiagnosticRecovery(r.diagnosticRecovery);
   if(r.observationStale===true)result.observationStale=true;
   return result;
 }
