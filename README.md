@@ -1,12 +1,64 @@
-# DeepSeek Codex Companion
+<div align="center">
 
-**让 Codex 按需通过本机 DeepSeek Harness 和 OpenCode 调用 DeepSeek，支持两个独立工作包并行，并在 Codex 中实时看到公开回复与任务进度。**
+<picture>
+  <source media="(max-width: 640px)" srcset="docs/readme/hero-compact.svg" />
+  <img src="docs/readme/hero.svg" alt="DeepSeek Codex Companion" width="960" />
+</picture>
+
+<p>
+<strong>让 Codex 统筹，让 DeepSeek 协作。</strong><br />
+<sub>双路受控委派 · 实时进度 · 独立复核</sub>
+</p>
+
+<p>
+<a href="package.json"><img src="https://img.shields.io/github/package-json/v/swat22544/deepseek-codex-companion?style=flat-square&amp;label=version&amp;color=858BFF&amp;labelColor=171C2B" alt="当前版本 1.2.0" /></a>
+<a href="#环境要求"><img src="https://img.shields.io/badge/platform-Windows-687BBD?style=flat-square&amp;labelColor=171C2B" alt="Windows 本地集成" /></a>
+<a href="#harness-与-opencode-的双路分工"><img src="https://img.shields.io/badge/DeepSeek-Flash%20%2F%20Max-8D79BB?style=flat-square&amp;labelColor=171C2B" alt="DeepSeek Flash / Max" /></a>
+<a href="docs/task-hook-validation-2026-10-14.md"><img src="https://img.shields.io/badge/verified-220%2F220-4D958A?style=flat-square&amp;labelColor=171C2B" alt="2026-10-14 离线验证快照：220/220" /></a>
+</p>
+
+<p>
+<a href="#安装"><strong>快速开始</strong></a> &nbsp;·&nbsp;
+<a href="#每次任务先加载协作规则">自动协作 Hook</a> &nbsp;·&nbsp;
+<a href="#协作方式">协作方式</a> &nbsp;·&nbsp;
+<a href="docs/task-hook-validation-2026-10-14.md">验证记录</a> &nbsp;·&nbsp;
+<a href="docs/deepseek-capability-evaluation-2026-10-13.md">能力评估</a>
+</p>
+
+<img src="https://img.mengyilong.vip/iacd8e.png" alt="Codex 主控角色与两位 DeepSeek 助手协作开发的原创插画" width="900" />
+<br />
+<sub>原创协作主题插画 · <a href="https://github.com/swat22544">swat22544</a></sub>
+
+</div>
+
+<div align="center">
+<table>
+<tr>
+<td align="center" valign="top" width="32%">
+<strong>01 · 双路协作</strong><br />
+<sub>Harness 与 OpenCode 各司其职，<br />独立工作包可并行推进。</sub>
+</td>
+<td align="center" valign="top" width="32%">
+<strong>02 · 实时监看</strong><br />
+<sub>公开回复、活动与结果，<br />集中呈现在 Codex 面板。</sub>
+</td>
+<td align="center" valign="top" width="32%">
+<strong>03 · 按需委派</strong><br />
+<sub>任务 Hook 先加载规则，<br />Codex 判断分工并复核候选。</sub>
+</td>
+</tr>
+</table>
+</div>
+
+<p align="center"><sub>Windows · Node.js ≥ 20 · 版本 1.2.0 · 离线验证快照：2026-10-14</sub></p>
+
+## 项目概览
 
 这个项目把两部分放在一起：`deepseek-helper` Skill 负责受控委派，`deepseek-monitor` 插件负责展示进度。Codex 决定任务和范围，DeepSeek 提供分析或候选稿，Codex 复核后再执行和采纳。
 
 适合代码审查、局部故障分析、方案比较、测试设计、资料整理，以及候选补丁和文档的起草。DeepSeek 可以深入参与一个明确的子任务，但始终由主代理调度。
 
-当前插件版本：**1.1.2**；Skill 修订：**`2026-10-14-reliability-fixes`**。默认使用 Harness，有两个独立工作包时可由 Harness 与 OpenCode 各承担一路，两路都可以根据主代理反馈继续迭代。中型任务默认总预算二十分钟，大型四十五分钟，分别限制无进展时间。监看标明来源，并展示安全过滤后的 OpenCode 错误类型、HTTP 状态及诊断来源。1.1.2 修复监看服务、进展计时、结果判重和安装配置的九项 P2/P3 问题，验证范围见[可靠性修复记录](docs/reliability-fixes-validation-2026-10-14.md)。[阅读 DeepSeek 受控辅助能力评估](docs/deepseek-capability-evaluation-2026-10-13.md)，了解已评估的 Harness／模型组合及其适用边界。
+当前插件版本：**1.2.0**；Skill 修订：**`2026-10-14-task-hook`**。1.2.0 增加任务前协作 Skill Hook，每次用户输入前加载完整规则；本机兼容登记与验证见[任务 Hook 说明](docs/task-hook-validation-2026-10-14.md)。默认使用 Harness，有两个独立工作包时可由 Harness 与 OpenCode 各承担一路，两路都可以根据主代理反馈继续迭代。中型任务默认总预算二十分钟，大型四十五分钟，分别限制无进展时间。监看标明来源，并展示安全过滤后的 OpenCode 错误类型、HTTP 状态及诊断来源。1.1.2 修复监看服务、进展计时、结果判重和安装配置的九项 P2/P3 问题，验证范围见[可靠性修复记录](docs/reliability-fixes-validation-2026-10-14.md)。[阅读 DeepSeek 受控辅助能力评估](docs/deepseek-capability-evaluation-2026-10-13.md)，了解已评估的 Harness／模型组合及其适用边界。
 
 ![DeepSeek 实时监看面板](docs/monitor-preview.jpg)
 
