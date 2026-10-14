@@ -27,7 +27,7 @@
 
 <img src="https://img.mengyilong.vip/iacd8e.png" alt="Codex 主控角色与两位 DeepSeek 助手协作开发的原创插画" width="900" />
 <br />
-<sub>原创协作主题插画 · <a href="https://github.com/swat22544">swat22544</a></sub>
+<sub> · <a href="https://github.com/swat22544">swat22544</a></sub>
 
 </div>
 
