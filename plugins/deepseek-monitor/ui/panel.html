@@ -273,7 +273,7 @@
     'use strict';
     (() => {
       const $ = (id) => document.getElementById(id);
-      const state = { runs: [], selectedId: null, run: null, query: '', tab: 'reply', follow: true, connected: false, hasLoaded: false, busy: false, queued: false, disposed: false, fetchedAt: 0 };
+      const state = { runs: [], selectedId: null, run: null, query: '', tab: 'reply', follow: true, connected: false, hasLoaded: false, busy: false, queued: false, suspended: false, disposed: false, fetchedAt: 0 };
       const statusNames = { preparing: '准备中', running: '进行中', completed: '待主代理复核', failed: '失败', interrupted: '监看记录中断' };
       const modeNames = { text: '文本任务', 'text-only': '文本任务', inspect: '文件审查', propose: '候选实现', snapshot: '文件快照', 'file-snapshot': '文件快照', candidate: '候选实现', 'candidate-files': '候选实现', files: '文件快照' };
       const backendLabel = (run) => run?.backend === 'opencode' ? 'OpenCode' : 'Harness';
@@ -345,16 +345,18 @@
         if (diagnostic && run.status === 'failed') lines.push(diagnostic);
         return lines.join('\n');
       }
-      let timer = null, toastTimer = null, controller = null, listSignature = '', detailSignature = '', eventsSignature = '', artifactsSignature = '', scrollScheduled = false;
+      let timer = null, toastTimer = null, elapsedTimer = null, controller = null, activityVersion = 0, listSignature = '', detailSignature = '', eventsSignature = '', artifactsSignature = '', scrollScheduled = false;
       let token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
       // An MCP App may itself be hosted on HTTPS. Only our loopback capability
       // URL selects the direct HTTP transport; all host sandboxes use the bridge.
       const httpMode = (location.protocol === 'http:' || location.protocol === 'https:') && location.hostname === '127.0.0.1' && Boolean(token);
       let rpcId = 0, bridgePromise = null;
       const pending = new Map();
+      const canRefresh = () => !state.disposed && !state.suspended && !document.hidden;
 
       function rpcNotify(method, params) { window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*'); }
       function rpcRequest(method, params) {
+        if (!canRefresh()) return Promise.reject(new Error('面板已暂停或关闭'));
         return new Promise((resolve, reject) => {
           const id = ++rpcId;
           const timeout = setTimeout(() => { pending.delete(id); reject(new Error('连接响应超时')); }, 12000);
@@ -371,6 +373,7 @@
           if (message.id !== undefined) window.parent.postMessage({ jsonrpc: '2.0', id: message.id, result: {} }, '*');
           return;
         }
+        if (state.disposed || state.suspended) return;
         if (typeof message.id === 'number' && !message.method) {
           const request = pending.get(message.id);
           if (!request) return;
@@ -386,31 +389,39 @@
       function ensureBridge() {
         if (window.parent === window) return Promise.reject(new Error('请从 Codex 或本地监看地址打开面板。'));
         if (!bridgePromise) {
-          bridgePromise = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.1.1' }, appCapabilities: {} })
+          const version = activityVersion;
+          const initializing = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.1.2' }, appCapabilities: {} })
             .then(() => {
+              if (!canRefresh() || version !== activityVersion) throw new Error('面板已暂停或关闭');
               rpcNotify('ui/notifications/initialized', {});
               rpcNotify('ui/notifications/size-changed', { height: Math.max(560, Math.min(800, window.innerHeight || 720)) });
             })
-            .catch((error) => { bridgePromise = null; throw error; });
+            .catch((error) => { if (bridgePromise === initializing) bridgePromise = null; throw error; });
+          bridgePromise = initializing;
         }
         return bridgePromise;
       }
       async function api(name, id) {
+        const version = activityVersion;
+        if (!canRefresh()) throw new Error('面板已暂停或关闭');
         if (httpMode) {
           if (!token) throw new Error('缺少访问凭证，请重新打开监看面板。');
-          controller = new AbortController();
-          const timeout = setTimeout(() => controller?.abort(), 12000);
+          const requestController = new AbortController();
+          controller = requestController;
+          const timeout = setTimeout(() => requestController.abort(), 12000);
+          requestController.signal.addEventListener('abort', () => clearTimeout(timeout), { once: true });
           try {
-            const response = await fetch(id === undefined ? '/api/runs' : `/api/runs/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', credentials: 'omit', signal: controller.signal });
+            const response = await fetch(id === undefined ? '/api/runs' : `/api/runs/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', credentials: 'omit', signal: requestController.signal });
             if (!response.ok) {
               if (response.status === 401 || response.status === 403) throw new Error('访问凭证已失效，请重新打开监看面板。');
               if (response.status === 404) throw new Error('这条任务记录已不可用。');
               throw new Error(`监看服务暂时不可用（${response.status}），正在重试。`);
             }
             return await response.json();
-          } finally { clearTimeout(timeout); controller = null; }
+          } finally { clearTimeout(timeout); if (controller === requestController) controller = null; }
         }
         await ensureBridge();
+        if (!canRefresh() || version !== activityVersion) throw new Error('面板已暂停或关闭');
         const response = await rpcRequest('tools/call', { name, arguments: id === undefined ? {} : { runId: id } });
         if (response?.isError) throw new Error('无法读取任务记录，正在重试。');
         if (!response?.structuredContent) throw new Error('监看服务返回了无法识别的数据。');
@@ -429,23 +440,24 @@
       }
       function schedule() {
         clearTimeout(timer);
-        if (state.disposed || document.hidden) return;
+        if (!canRefresh()) return;
         const delay = state.connected && state.runs.some(active) ? 800 : 2500;
         timer = setTimeout(refresh, delay);
       }
       function requestRefresh() {
-        if (state.disposed || document.hidden) return;
+        if (!canRefresh()) return;
         clearTimeout(timer);
         if (state.busy) { state.queued = true; return; }
         void refresh();
       }
       async function refresh() {
-        if (state.disposed || document.hidden) return;
+        if (!canRefresh()) return;
         if (state.busy) { state.queued = true; return; }
+        const version = activityVersion;
         state.busy = true;
         try {
           const data = await api('monitor_list');
-          if (document.hidden || state.disposed) return;
+          if (!canRefresh() || version !== activityVersion) return;
           if (!Array.isArray(data?.runs)) throw new Error('任务列表格式不正确，正在重试。');
           state.runs = data.runs.filter((run) => run && typeof run.id === 'string');
           state.hasLoaded = true;
@@ -457,7 +469,7 @@
           const selectedId = state.selectedId;
           if (selectedId) {
             const detail = await api('monitor_get', selectedId);
-            if (document.hidden || state.disposed) return;
+            if (!canRefresh() || version !== activityVersion) return;
             if (!detail?.run || detail.run.id !== selectedId) throw new Error('任务详情格式不正确，正在重试。');
             if (state.selectedId === selectedId) {
               state.run = detail.run;
@@ -467,7 +479,7 @@
           }
           updateConnection(true);
         } catch (error) {
-          if (!document.hidden && !state.disposed) updateConnection(false, error?.name === 'AbortError' ? '连接响应超时，正在自动重试。' : text(error?.message, '无法连接监看服务，正在自动重试。'));
+          if (canRefresh() && version === activityVersion) updateConnection(false, error?.name === 'AbortError' ? '连接响应超时，正在自动重试。' : text(error?.message, '无法连接监看服务，正在自动重试。'));
         } finally {
           state.busy = false;
           if (state.queued) { state.queued = false; requestRefresh(); }
@@ -626,7 +638,7 @@
         }
         $('artifacts').replaceChildren(fragment); $('artifacts-empty').hidden = artifacts.length > 0;
       }
-      function toast(message) { clearTimeout(toastTimer); setText($('toast'), message); $('toast').hidden = false; toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2500); }
+      function toast(message) { if (!canRefresh()) return; clearTimeout(toastTimer); setText($('toast'), message); $('toast').hidden = false; toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2500); }
       async function copyReply() {
         if (!state.run) return;
         const value = [text(state.run.reply), text(state.run.draft)].filter(Boolean).join('\n\n');
@@ -642,9 +654,27 @@
           toast('回复已复制');
         } catch { toast('无法访问剪贴板，请选中回复文字复制。'); }
       }
+      function stopActivity(message) {
+        clearTimeout(timer); clearTimeout(toastTimer); clearInterval(elapsedTimer);
+        timer = toastTimer = elapsedTimer = null; state.queued = false;
+        $('toast').hidden = true; controller?.abort();
+        for (const request of pending.values()) { clearTimeout(request.timeout); request.reject(new Error(message)); } pending.clear();
+      }
+      function startElapsedTimer() {
+        if (state.disposed || state.suspended || elapsedTimer !== null) return;
+        elapsedTimer = setInterval(() => { if (canRefresh()) updateElapsed(); }, 1000);
+      }
+      function suspend() {
+        if (state.disposed || state.suspended) return;
+        state.suspended = true; activityVersion++; stopActivity('面板已暂停');
+      }
+      function resume() {
+        if (state.disposed || !state.suspended) return;
+        state.suspended = false; startElapsedTimer(); requestRefresh();
+      }
       function dispose() {
-        state.disposed = true; clearTimeout(timer); clearTimeout(toastTimer); clearInterval(elapsedTimer); controller?.abort();
-        for (const request of pending.values()) { clearTimeout(request.timeout); request.reject(new Error('面板已关闭')); } pending.clear();
+        if (state.disposed) return;
+        state.disposed = true; activityVersion++; stopActivity('面板已关闭');
       }
       $('run-list').addEventListener('click', (event) => { const button = event.target.closest('[data-run-id]'); if (button) selectRun(button.dataset.runId); });
       $('search').addEventListener('input', (event) => { state.query = event.target.value.trim(); renderList(); });
@@ -664,8 +694,9 @@
       $('retry').addEventListener('click', () => { setText($('connection-label'), '监看正在重连'); requestRefresh(); });
       document.addEventListener('visibilitychange', () => { if (document.hidden) { clearTimeout(timer); controller?.abort(); } else requestRefresh(); });
       window.addEventListener('hashchange', () => { token = new URLSearchParams(location.hash.slice(1)).get('token') || ''; requestRefresh(); });
-      window.addEventListener('pagehide', dispose, { once: true });
-      const elapsedTimer = setInterval(() => { if (!document.hidden) updateElapsed(); }, 1000);
+      window.addEventListener('pagehide', (event) => { if (event.persisted) suspend(); else dispose(); });
+      window.addEventListener('pageshow', (event) => { if (event.persisted) resume(); });
+      startElapsedTimer();
       renderList(); requestRefresh();
     })();
   </script>

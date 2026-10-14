@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { verifyResult, validateContract } from '../scripts/verify-result.mjs';
 
 const valid = (text = '["TASK-2","TASK-32"]') => ({
@@ -109,6 +110,69 @@ test('JSON equality ignores object key order but preserves value types, nested d
   assert.equal(verifyResult(valid('{"a":"1","b":[{"x":true,"y":null},2]}'), schema).mechanicalOk, false);
   assert.equal(verifyResult(valid('{"a":1,"b":[2,{"x":true,"y":null}]}'), schema).mechanicalOk, false);
   assert.equal(verifyResult(valid('[{"a":1,"b":2},{"b":2,"a":1}]'), { format: 'json', type: 'array', uniqueItems: true }).mechanicalOk, false);
+});
+
+test('uniqueness preserves JSON semantics for special keys, strings and signed zero', () => {
+  const schema={format:'json',type:'array',uniqueItems:true};
+  const cases=[
+    [[-0,0],true],
+    [[0,'0',false,null,{},[]],false],
+    [[{a:1,b:[2,3]},{b:[2,3],a:1}],true],
+    [[{a:1,b:[2,3]},{b:[3,2],a:1}],false],
+    [[JSON.parse('{"__proto__":{"x":1},"constructor":2}'),JSON.parse('{"constructor":2,"__proto__":{"x":1}}')],true],
+    [[{'a,b':'c'},{a:'b,c'}],false],
+    [[{'"x"':'[y]'},{x:'y'}],false],
+    [[{'\u0000':'x'},{'':'\u0000x'}],false],
+    [['é','e\u0301'],false],
+    [['\ud800','\ud800'],true],
+    [[{'10':1,'2':2},{'2':2,'10':1}],true],
+  ];
+  for(const [items,duplicate]of cases){
+    const report=verifyResult(valid(JSON.stringify(items)),schema);
+    assert.equal(report.contract.issues.some(entry=>entry.code==='duplicate_items'),duplicate,JSON.stringify(items));
+    assert.equal(report.mechanicalOk,!duplicate);
+  }
+});
+
+test('uniqueness matches an independent JSON deep-equality oracle on generated nested values',()=>{
+  let seed=9137;
+  const next=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
+  const primitives=[null,false,true,0,-0,2.5,'',']},:','中文','\ud800'];
+  const value=depth=>{
+    const kind=next()%4;
+    if(!depth||kind<2)return primitives[next()%primitives.length];
+    if(kind===2)return [value(depth-1),value(depth-1)];
+    const keys=['b','a','__proto__','constructor','\u0000','10'];
+    const result=Object.create(null);
+    for(let i=0;i<2;i++)result[keys[next()%keys.length]]=value(depth-1);
+    return result;
+  };
+  const samples=Array.from({length:80},()=>value(3));
+  for(let i=0;i<200;i++){
+    const left=samples[next()%samples.length],right=i%3===0?left:samples[next()%samples.length];
+    const normalize=item=>JSON.parse(JSON.stringify(item));
+    const expected=isDeepStrictEqual(normalize(left),normalize(right));
+    const report=verifyResult(valid(JSON.stringify([left,right])),{format:'json',type:'array',uniqueItems:true});
+    assert.equal(report.contract.issues.some(entry=>entry.code==='duplicate_items'),expected);
+  }
+});
+
+test('direct API expected values retain per-item JSON round-trip normalization',()=>{
+  const accessor=Object.defineProperty({},'a',{enumerable:true,get(){return 1;}});
+  const serialized=Object.defineProperty({a:1},'toJSON',{value(){return {z:2};}});
+  for(const expected of [[accessor,{a:1}],[serialized,{z:2}]]){
+    assert.ok(validateContract({format:'json',type:'array',uniqueItems:true,expected}).some(entry=>entry.code==='contract_expected_constraints'));
+  }
+  assert.deepEqual(validateContract({format:'json',type:'array',uniqueItems:true,expected:[serialized,{a:1}]}),[]);
+});
+
+test('an 8000-item unique result completes within a bounded independent verifier process',()=>{
+  const script=new URL('../scripts/verify-result.mjs',import.meta.url).href;
+  const source=`import {verifyResult} from ${JSON.stringify(script)}; const result=${JSON.stringify(valid())}; result.final.text=JSON.stringify(Array.from({length:8000},(_,i)=>i)); const report=verifyResult(result,{format:'json',type:'array',uniqueItems:true}); console.log(JSON.stringify({ok:report.mechanicalOk}));`;
+  const child=spawnSync(process.execPath,['--input-type=module','-e',source],{encoding:'utf8',windowsHide:true,timeout:5000,maxBuffer:4096});
+  assert.equal(child.error,undefined,child.error?.message);
+  assert.equal(child.status,0,child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout),{ok:true});
 });
 
 test('explicit types distinguish null, arrays, objects, integers, numbers, strings and booleans', () => {

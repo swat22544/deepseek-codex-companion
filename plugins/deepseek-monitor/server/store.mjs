@@ -4,19 +4,27 @@ import {join} from 'node:path';
 export const dataRoot=join(process.env.CODEX_HOME||join(homedir(),'.codex'),'deepseek-monitor');
 const idPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const safeBackend=value=>value==='opencode'?'opencode':'harness';
+const validTimestamp=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&Number.isFinite(Date.parse(value));
 export async function getRun(id,root=dataRoot){
   if(!idPattern.test(id))throw new Error('Invalid run id');
   const path=join(root,'runs',id+'.json');
   if((await stat(path)).size>5*1024*1024)throw new Error('Run exceeds size limit');
   const r=JSON.parse(await readFile(path,'utf8'));
-  if(r.id!==id||r.version!==1)throw new Error('Invalid run record');
+  if(!r||typeof r!=='object'||Array.isArray(r)||r.id!==id||r.version!==1)throw new Error('Invalid run record');
+  // Legacy records may omit a timestamp. Corrupt starts cannot reach sorting;
+  // corrupt heartbeats must never make unfinished records indefinitely live.
+  if(r.startedAt===undefined&&validTimestamp(r.updatedAt))r.startedAt=r.updatedAt;
+  if(!validTimestamp(r.startedAt))throw new Error('Invalid run record timestamp');
+  r.startedAt=new Date(r.startedAt).toISOString();
+  const validUpdate=validTimestamp(r.updatedAt);
+  r.updatedAt=validUpdate?new Date(r.updatedAt).toISOString():(r.done?r.startedAt:null);
   // Legacy records came from Harness; do not expose arbitrary backend metadata.
   r.backend=safeBackend(r.backend);
   if(Object.hasOwn(r,'error')&&typeof r.error!=='string')r.error=null;
   if(Object.hasOwn(r,'errorDetails'))r.errorDetails=safeErrorDetails(r.errorDetails);
   if(Object.hasOwn(r,'errorEvidence'))r.errorEvidence=safeErrorEvidence(r.errorEvidence);
   if(Object.hasOwn(r,'diagnosticRecovery'))r.diagnosticRecovery=safeDiagnosticRecovery(r.diagnosticRecovery);
-  if(!r.done&&Date.now()-Date.parse(r.updatedAt)>15000)return {...r,status:'interrupted',observationStale:true,error:'超过 15 秒未收到监看记录更新；这不等于模型失败。请由主代理检查本次结果文件和进程状态。'};
+  if(!r.done&&(!validUpdate||Date.now()-Date.parse(r.updatedAt)>15000))return {...r,status:'interrupted',observationStale:true,error:validUpdate?'超过 15 秒未收到监看记录更新；这不等于模型失败。请由主代理检查本次结果文件和进程状态。':'监看记录更新时间无效；这不等于模型失败。请由主代理检查本次结果文件和进程状态。'};
   return r;
 }
 // List/MCP summaries must not forward arbitrary nested data from run files.

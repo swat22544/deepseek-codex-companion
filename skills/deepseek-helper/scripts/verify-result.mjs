@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { hasDuplicateJsonItems } from './canonical-json.mjs';
 
 // This module only checks saved evidence. It never loads the runner or monitor,
 // invokes a model, reads candidate files, applies edits, or executes candidates.
@@ -64,7 +65,9 @@ function checkValue(value, contract) {
     if (contract.requiredKeys?.some(key => !owns(value, key))) issues.push(issue('missing_keys', 'final.text', 'At least one required top-level key is missing.'));
     if (contract.allowedKeys && Object.keys(value).some(key => !contract.allowedKeys.includes(key))) issues.push(issue('unexpected_keys', 'final.text', 'At least one top-level key is not allowed.'));
   }
-  if (Array.isArray(value) && contract.uniqueItems === true && value.some((item, index) => value.slice(0, index).some(previous => equalJson(item, previous)))) {
+  // Normalize each item once to retain equalJson's round-trip semantics for
+  // direct API contracts, then compare canonical keys without pairwise work.
+  if (Array.isArray(value) && contract.uniqueItems === true && hasDuplicateJsonItems(value.map(item=>JSON.parse(JSON.stringify(item))))) {
     issues.push(issue('duplicate_items', 'final.text', 'The array contains duplicate JSON values.'));
   }
   if (owns(contract, 'expected') && !equalJson(value, contract.expected)) issues.push(issue('expected_mismatch', 'final.text', 'Parsed JSON differs from the independently supplied expected value.'));

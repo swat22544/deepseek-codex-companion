@@ -10,13 +10,10 @@ export function resolveCodexHome({env=process.env, home=homedir()}={}) {
   return resolve(env.CODEX_HOME||join(home,'.codex'));
 }
 
-function configuredPaths(configPath) {
-  let text;
-  try {text=readFileSync(configPath,'utf8');}
-  catch(error) {if(error.code==='ENOENT')return {};throw error;}
-  let config;
-  try {config=JSON.parse(text.replace(/^\uFEFF/,''));}
-  catch {throw new Error('helper.config.json must contain valid JSON.');}
+// Installation and runtime resolution must accept the same saved path shape.
+// Callers can replace a known path before validation, without preserving other
+// local fields or ever reading backend credentials.
+export function validateConfiguredPaths(config) {
   if(!config||typeof config!=='object'||Array.isArray(config)||!['installation','opencodeExecutable'].some(key=>Object.hasOwn(config,key)))throw new Error('helper.config.json must contain an absolute installation or opencodeExecutable path.');
   const paths={};
   for(const key of ['installation','opencodeExecutable'])if(Object.hasOwn(config,key)){
@@ -24,6 +21,16 @@ function configuredPaths(configPath) {
     paths[key]=config[key];
   }
   return paths;
+}
+
+function configuredPaths(configPath) {
+  let text;
+  try {text=readFileSync(configPath,'utf8');}
+  catch(error) {if(error.code==='ENOENT')return {};throw error;}
+  let config;
+  try {config=JSON.parse(text.replace(/^\uFEFF/,''));}
+  catch {throw new Error('helper.config.json must contain valid JSON.');}
+  return validateConfiguredPaths(config);
 }
 
 // Resolve at invocation time, so launchers can supply environment overrides.

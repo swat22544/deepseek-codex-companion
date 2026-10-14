@@ -2,7 +2,7 @@
 name: deepseek-helper
 description: 在中等开发任务的多个阶段主动通过本机 DeepSeek Harness 与 OpenCode 协作，可并行委派独立的候选实现、测试、局部重构、故障分析与审查，再根据验证反馈续作。主代理控制后端、范围、执行和采纳，分别核验代码、说明、引用与测试预期。
 metadata:
-  revision: "2026-10-14-safe-diagnostics"
+  revision: "2026-10-14-reliability-fixes"
 ---
 
 # DeepSeek 受控协作

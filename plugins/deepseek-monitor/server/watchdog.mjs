@@ -1,9 +1,9 @@
 import {appendFile, mkdir, rename, stat, writeFile} from 'node:fs/promises';
-import {dirname, join, resolve} from 'node:path';
+import {join, resolve} from 'node:path';
+import {dataRoot} from './store.mjs';
 
 // The scheduled task passes an explicit user data directory, including before logon.
-const root = resolve(process.argv[2] || join(process.env.USERPROFILE, '.codex', 'deepseek-monitor'));
-process.env.CODEX_HOME = dirname(root);
+const root = resolve(process.argv[2] || dataRoot);
 const {launch} = await import('./launch.mjs');
 const {readServiceConfig} = await import('./service-config.mjs');
 const config = await readServiceConfig(root);
@@ -32,7 +32,7 @@ async function report(state, message) {
 await report('starting', 'Monitor watchdog started');
 while (!stopping) {
   try {
-    const result = await launch();
+    const result = await launch({root});
     const address = new URL(result.url);
     if (address.hostname !== '127.0.0.1' || Number(address.port) !== config.port || new URLSearchParams(address.hash.slice(1)).get('token') !== config.token) {
       throw new Error('Running monitor does not match the persistent local address');

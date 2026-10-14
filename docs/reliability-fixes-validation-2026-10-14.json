@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-14",
+  "timezone": "Asia/Shanghai",
+  "version": "1.1.2",
+  "baselineCommit": "7afcaefb65886072ce4a02e464cb096d2de40863",
+  "fixed": [
+    "R03",
+    "R04",
+    "R05",
+    "R06",
+    "R07",
+    "R08",
+    "R09",
+    "R10",
+    "R11"
+  ],
+  "deferred": [
+    "R01",
+    "R02"
+  ],
+  "tests": {
+    "command": "node scripts/test.mjs",
+    "total": 181,
+    "passed": 181,
+    "failed": 0,
+    "skipped": 0,
+    "newSinceBaseline": 34,
+    "providerRequests": 0
+  },
+  "performance": {
+    "items": 8000,
+    "jsonBytes": 38891,
+    "baselineMs": 10682,
+    "afterMs": 8,
+    "scope": "Single-input independent measurement on the same workstation; not a throughput or provider benchmark."
+  },
+  "harnessSmoke": {
+    "backend": "harness",
+    "mode": "inspect",
+    "model": {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "reasoningEffort": "max"
+    },
+    "elapsedMs": 6167,
+    "modelRequests": 2,
+    "toolCalls": 1,
+    "exitCode": 0,
+    "ok": true,
+    "strictJsonContractPassed": true,
+    "snapshotHashMatched": true,
+    "cleanupIncomplete": false,
+    "monitorAvailable": true
+  },
+  "installation": {
+    "isolatedRoot": true,
+    "manifestVersion": "1.1.2",
+    "installedVerifierContractPassed": true,
+    "productionInstallationReplaced": false
+  },
+  "limitations": [
+    "P1 OpenCode external configuration isolation deferred.",
+    "No additional real OpenCode provider run in this release.",
+    "BFCache script-level VM validation only.",
+    "No long-duration stress or cross-platform runtime evaluation."
+  ]
+}

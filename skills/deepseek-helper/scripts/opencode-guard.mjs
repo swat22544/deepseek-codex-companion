@@ -15,17 +15,56 @@ export function officialEndpoint(value,{base=false}={}) {
 
 // Observe only allowlisted SSE fields. The original bytes are always forwarded;
 // provider reasoning, tool input, messages and headers never enter the audit.
-export function observeSSE(body,onDelta,{maxLine=262144,onEnd=()=>{}}={}) {
-  const decoder=new TextDecoder();let pending='',discard=false;
+export function observeSSE(body,onDelta,{maxLine=262144,onEnd=()=>{},allowedTools=[]}={}) {
+  const allowed=new Set([...allowedTools].filter(name=>tools.has(name))),calls=new Map();
+  const decoder=new TextDecoder();let pending='',discard=false,done=false;
   const consume=line=>{
-    if(!line.startsWith('data:'))return;
-    let frame;try{frame=JSON.parse(line.slice(5).trim());}catch{return;}
+    if(done||!line.startsWith('data:'))return;
+    const data=line.slice(5).trim();
+    if(data==='[DONE]'){done=true;calls.clear();return;}
+    let frame;try{frame=JSON.parse(data);}catch{return;}
     if(!Array.isArray(frame?.choices))return;
     for(const choice of frame.choices.slice(0,4)) {
       const delta=choice?.delta;if(!delta||typeof delta!=='object')continue;
       for(const [key,kind] of [['content','text'],['reasoning_content','reasoning']]) {
         if(typeof delta[key]==='string'&&delta[key].length)onDelta(kind,delta[key].length,kind==='text'?delta[key]:undefined);
       }
+      if(!allowed.size||!Number.isSafeInteger(choice.index)||choice.index<0||choice.index>3)continue;
+      let choiceCalls=calls.get(choice.index);
+      if(!choiceCalls)calls.set(choice.index,choiceCalls={entries:new Map(),ids:new Set(),closed:false});
+      if(choiceCalls.closed)continue;
+      if(Array.isArray(delta.tool_calls)) {
+        const seen=new Set(),duplicate=new Set();
+        for(const call of delta.tool_calls) {
+          if(seen.has(call?.index))duplicate.add(call.index);
+          seen.add(call?.index);
+        }
+        for(const call of delta.tool_calls.slice(0,128)) {
+          // Bind each tool index to its first complete, permitted identity.
+          // Continuations retain only this identity; argument text is counted
+          // and immediately discarded, never accumulated or emitted.
+          if(!Number.isSafeInteger(call?.index)||call.index<0||call.index>=128)continue;
+          let entry=choiceCalls.entries.get(call.index);
+          const fn=call.function;
+          if(duplicate.has(call.index)||!fn||typeof fn!=='object'||Array.isArray(fn)
+            ||(fn.arguments!==undefined&&typeof fn.arguments!=='string')) {
+            choiceCalls.entries.set(call.index,null);continue;
+          }
+          if(!choiceCalls.entries.has(call.index)) {
+            if(!identity(call.id)||call.type!=='function'||!allowed.has(fn.name)||choiceCalls.ids.has(call.id)) {
+              choiceCalls.entries.set(call.index,null);continue;
+            }
+            entry={id:call.id,name:fn.name};choiceCalls.entries.set(call.index,entry);choiceCalls.ids.add(call.id);
+          }
+          if(!entry)continue;
+          if((call.id!==undefined&&call.id!==entry.id)||(call.type!==undefined&&call.type!=='function')
+            ||(fn.name!==undefined&&fn.name!==entry.name)) {
+            choiceCalls.entries.set(call.index,null);continue;
+          }
+          if(fn.arguments?.length)onDelta('tool_arguments',fn.arguments.length);
+        }
+      }
+      if(choice.finish_reason!==undefined&&choice.finish_reason!==null)choiceCalls.closed=true;
     }
   };
   const inspect=text=>{
@@ -46,7 +85,7 @@ export function observeSSE(body,onDelta,{maxLine=262144,onEnd=()=>{}}={}) {
 }
 
 export function createStreamAudit(emit,identity,{now=Date.now,intervalMs=500}={}) {
-  const counts={text:0,reasoning:0},last={text:-Infinity,reasoning:-Infinity};let publicText='';
+  const counts={text:0,reasoning:0,tool_arguments:0},last={text:-Infinity,reasoning:-Infinity,tool_arguments:-Infinity};let publicText='';
   const flush=kind=>{
     if(!counts[kind])return;
     emit('progress',{...identity,deltaKind:kind,charCount:counts[kind]});counts[kind]=0;last[kind]=now();
@@ -54,12 +93,13 @@ export function createStreamAudit(emit,identity,{now=Date.now,intervalMs=500}={}
   };
   return {
     delta(kind,count,text){
-      counts[kind]+=count;if(kind==='text')publicText+=text;
+      if(!Object.hasOwn(counts,kind)||!Number.isSafeInteger(count)||count<=0)return;
+      counts[kind]+=count;if(kind==='text'&&typeof text==='string')publicText+=text;
       // Chunk-level reasoning can produce many tiny frames. Keep at most two
       // normal progress records/second/kind and bounded public-text batching.
       if(now()-last[kind]>=intervalMs||publicText.length>=4096)flush(kind);
     },
-    finish(){flush('reasoning');flush('text');},
+    finish(){flush('tool_arguments');flush('reasoning');flush('text');},
   };
 }
 
@@ -152,7 +192,7 @@ export function createOpenCodeGuard({policyPath=process.env.CODEX_OPENCODE_POLIC
       if(!event.response.body)return;
       if(!event.response.headers.get('content-type')?.toLowerCase().includes('text/event-stream'))reject('response_format');
       const audit=createStreamAudit(emit,{sessionId,requestIndex:index});
-      const body=observeSSE(event.response.body,audit.delta,{onEnd:audit.finish});
+      const body=observeSSE(event.response.body,audit.delta,{onEnd:audit.finish,allowedTools:allowed});
       event.response=new Response(body,{status:event.response.status,statusText:event.response.statusText,headers:event.response.headers});
     });
     registrations.push(await ctx.tool.hook('execute.before',event=>{

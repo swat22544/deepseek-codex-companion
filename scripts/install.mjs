@@ -2,6 +2,7 @@ import {cp,mkdir,readFile,writeFile,access,stat} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {join,resolve,dirname,isAbsolute} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import {validateConfiguredPaths} from '../skills/deepseek-helper/scripts/runtime-paths.mjs';
 
 const repository=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const json=async path=>JSON.parse((await readFile(path,'utf8')).replace(/^\uFEFF/,''));
@@ -16,7 +17,8 @@ export async function install({codexHome=process.env.CODEX_HOME||join(homedir(),
   const targets=[pluginTarget,skillTarget];
   for(const target of targets)if(await exists(target)&&!overwrite)throw new Error('Already installed: '+target+'. Use --overwrite to back up and replace this component.');
   const localConfigPath=join(skillTarget,'helper.config.json'),localConfig={};
-  if(await exists(localConfigPath)){
+  const hadLocalConfig=await exists(localConfigPath);
+  if(hadLocalConfig){
     const previous=await json(localConfigPath);
     if(!previous||typeof previous!=='object'||Array.isArray(previous))throw new Error('Installed helper.config.json must contain an object.');
     for(const key of ['installation','opencodeExecutable'])if(Object.hasOwn(previous,key)){
@@ -30,6 +32,10 @@ export async function install({codexHome=process.env.CODEX_HOME||join(homedir(),
     if(typeof opencodeCli!=='string'||!isAbsolute(opencodeCli))throw new Error('--opencode-cli must be an absolute executable path.');
     localConfig.opencodeExecutable=resolve(opencodeCli);
   }
+  // A previous empty/unknown-only object otherwise survives a successful
+  // update unchanged, only to fail on the next delegation. Reject before any
+  // backup/copy; explicitly supplied backend paths can repair that shape.
+  if(hadLocalConfig||Object.keys(localConfig).length)validateConfiguredPaths(localConfig);
   if(localConfig.opencodeExecutable){
     const executableStat=await stat(localConfig.opencodeExecutable).catch(()=>null);
     if(!executableStat?.isFile())throw new Error('OpenCode CLI executable was not found at --opencode-cli or the installed application path.');

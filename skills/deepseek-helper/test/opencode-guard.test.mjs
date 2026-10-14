@@ -4,6 +4,7 @@ import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createOpenCodeGuard,officialEndpoint,observeSSE,createStreamAudit,awaitToolRegistry} from '../scripts/opencode-guard.mjs';
+import {createProgressClock} from '../scripts/timeout-policy.mjs';
 
 async function fixture(t,{allowedTools=[],registryOptions={},list=async()=>allowedTools.map(id=>({id}))}={}) {
   const directory=await mkdtemp(join(tmpdir(),'opencode-guard-test-'));
@@ -121,6 +122,96 @@ test('stream observer preserves bytes and emits only counts for private reasonin
   assert.deepEqual(audit.filter(e=>e.event==='reply_stream').map(e=>e.text),['公开回复']);
 });
 
+test('verified permitted tool argument streams produce counts and never disclose arguments',async t=>{
+  const name='codex_helper_helper_write_artifact',f=await fixture(t,{allowedTools:[name]});
+  const req=request({tools:[{type:'function',function:{name,parameters:{type:'object'}}}]});
+  await f.hooks.get('http.request')({...identity,request:req});
+  const fragments=['{"name":"candidate.mjs","content":"PRIVATE_TOOL_', 'ARGUMENT_FIXTURE"}'];
+  const sse=tool_calls=>'data: '+JSON.stringify({choices:[{index:0,delta:{tool_calls}}]})+'\n\n';
+  const stream=sse([{index:0,id:'PRIVATE_CALL_ID',type:'function',function:{name,arguments:fragments[0]}}])
+    +sse([{index:0,function:{arguments:fragments[1]}}])+'data: [DONE]\n\n';
+  const bytes=new TextEncoder().encode(stream);
+  const body=new ReadableStream({start(c){for(let index=0;index<bytes.length;index+=3)c.enqueue(bytes.slice(index,index+3));c.close();}});
+  const event={...identity,request:req,response:new Response(body,{headers:{'content-type':'text/event-stream'}})};
+  f.hooks.get('http.response')(event);
+  assert.deepEqual(new Uint8Array(await event.response.arrayBuffer()),bytes);
+  const audit=await f.audit(),progress=audit.filter(e=>e.event==='progress');
+  assert.equal(progress.reduce((count,event)=>count+event.charCount,0),fragments.join('').length);
+  assert.ok(progress.every(event=>event.deltaKind==='tool_arguments'&&event.sessionId===identity.sessionID&&event.requestIndex===1));
+  assert.equal(audit.some(e=>e.event==='reply_stream'),false);
+  assert.doesNotMatch(JSON.stringify(audit),/PRIVATE_CALL|PRIVATE_TOOL|ARGUMENT_FIXTURE|candidate.mjs|content|arguments":/);
+});
+
+test('argument activity requires a complete permitted tool identity and valid continuations',async()=>{
+  const name='codex_helper_helper_write_artifact',events=[];
+  const first=(index,id='call-'+index,tool=name,arguments_='x')=>({index,id,type:'function',function:{name:tool,arguments:arguments_}});
+  const continuation=(index,arguments_='y')=>({index,function:{arguments:arguments_}});
+  const frames=[
+    [continuation(0)], // no permitted start; this index cannot be rebound later
+    [first(0)],
+    [first(1,'unknown','execute')],
+    [first(2,'wrong-type',name,4)],
+    [first(-1),first(128)],
+    [first(3,'duplicate'),first(3,'duplicate')],
+    [first(4,'valid')],
+    [continuation(4)],
+    [first(5,'valid')], // a call ID cannot identify two indices
+    [{...continuation(4),id:'other'}],
+    [continuation(4)], // a changed identity poisons the index
+    [first(6,'name-change')],
+    [{index:6,function:{name:'execute',arguments:'PRIVATE_ARGUMENTS'}}],
+    [continuation(6)],
+    [first(7,'type-change')],
+    [{...continuation(7),type:'other'}],
+    [continuation(7)],
+    [first(8,'bad-arguments')],
+    [continuation(8,null)],
+    [continuation(8)],
+  ];
+  const stream=frames.map(tool_calls=>'data: '+JSON.stringify({choices:[{index:0,delta:{tool_calls}}]})+'\n\n').join('');
+  const observed=observeSSE(new Response(stream).body,(...event)=>events.push(event),{allowedTools:[name]});
+  assert.equal(await new Response(observed).text(),stream);
+  assert.deepEqual(events,[['tool_arguments',1],['tool_arguments',1],['tool_arguments',1],['tool_arguments',1],['tool_arguments',1]]);
+});
+
+test('tool progress cannot cross choices, completed streams, or an absent allowlist',async()=>{
+  const name='codex_helper_helper_read_file';
+  const start={index:0,id:'call',type:'function',function:{name,arguments:'abc'}},delta={index:0,function:{arguments:'d'}};
+  const frame=(tool_calls,index=0,finish_reason)=>'data: '+JSON.stringify({choices:[{index,delta:{tool_calls},finish_reason}]})+'\n\n';
+  const stream=frame([start],5)+frame([start])+frame([delta],1)+frame([delta],0,'tool_calls')
+    +frame([delta])+'data: [DONE]\n\n'+frame([start]);
+  const events=[],observed=observeSSE(new Response(stream).body,(...event)=>events.push(event),{allowedTools:[name]});
+  assert.equal(await new Response(observed).text(),stream);
+  assert.deepEqual(events,[['tool_arguments',3],['tool_arguments',1]]);
+  const denied=[];await new Response(observeSSE(new Response(frame([start])).body,(...event)=>denied.push(event))).text();
+  assert.deepEqual(denied,[]);
+});
+
+test('tool argument progress prevents idle expiry while preserving the fixed total deadline',async()=>{
+  const name='codex_helper_helper_write_artifact',events=[];let time=0;
+  const clock=createProgressClock({totalTimeoutMs:3000,idleTimeoutMs:1000},{now:()=>time});
+  const audit=createStreamAudit((event,data)=>{
+    events.push({event,...data});if(event==='progress')clock.markProgress('model_output');
+  },{sessionId:'verified',requestIndex:1},{now:()=>time});
+  const body=new ReadableStream({start(controller){
+    for(let index=0;index<5;index++) {
+      const call={index:0,function:{arguments:'PRIVATE_TOOL_ARGUMENT_FRAGMENT'}};
+      if(index===0)Object.assign(call,{id:'call',type:'function',function:{...call.function,name}});
+      controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{index:0,delta:{tool_calls:[call]}}]})+'\n\n'));
+    }
+    controller.close();
+  }});
+  await new Response(observeSSE(body,(...delta)=>{
+    time+=600;audit.delta(...delta);if(time<3000)assert.equal(clock.expired(),null);
+  },{allowedTools:[name],onEnd:audit.finish})).arrayBuffer();
+  assert.equal(clock.expired().kind,'total');
+  assert.equal(clock.snapshot().totalElapsedMs,3000);
+  assert.equal(clock.snapshot().idleElapsedMs,600);
+  assert.equal(clock.snapshot().lastProgressKind,'model_output');
+  assert.equal(events.filter(event=>event.event==='progress').length,5);
+  assert.doesNotMatch(JSON.stringify(events),/PRIVATE_TOOL|FRAGMENT/);
+});
+
 test('non-success HTTP responses audit only status and the exact verified request identity',async t=>{
   const f=await fixture(t);
   for(const status of [401,429,503]) {
@@ -143,9 +234,16 @@ test('oversized and malformed SSE lines are skipped without altering transport',
 test('tiny streaming frames have bounded audit growth without losing public text or progress counts',()=>{
   const events=[];let time=0;
   const audit=createStreamAudit((event,data)=>events.push({event,...data}),{requestIndex:1},{now:()=>time});
-  for(let i=0;i<10000;i++){time=i;audit.delta('reasoning',1);audit.delta('text',1,'x');}
+  for(let i=0;i<10000;i++){time=i;audit.delta('reasoning',1);audit.delta('text',1,'x');audit.delta('tool_arguments',1,'PRIVATE_TOOL_INPUT');}
   audit.finish();
-  assert.ok(events.length<70);
-  for(const kind of ['reasoning','text'])assert.equal(events.filter(e=>e.event==='progress'&&e.deltaKind===kind).reduce((sum,e)=>sum+e.charCount,0),10000);
+  assert.ok(events.length<90);
+  for(const kind of ['reasoning','text','tool_arguments'])assert.equal(events.filter(e=>e.event==='progress'&&e.deltaKind===kind).reduce((sum,e)=>sum+e.charCount,0),10000);
   assert.equal(events.filter(e=>e.event==='reply_stream').map(e=>e.text).join(''),'x'.repeat(10000));
+  assert.doesNotMatch(JSON.stringify(events),/PRIVATE_TOOL_INPUT/);
+});
+
+test('invalid audit activity cannot generate progress or public reply records',()=>{
+  const events=[],audit=createStreamAudit((event,data)=>events.push({event,...data}),{});
+  for(const [kind,count] of [['other',1],['text',0],['text',-1],['reasoning',NaN],['tool_arguments',1.5],['tool_arguments',Infinity]])audit.delta(kind,count,'PRIVATE');
+  audit.finish();assert.deepEqual(events,[]);
 });

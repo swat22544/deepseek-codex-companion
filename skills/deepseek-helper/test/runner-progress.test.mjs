@@ -46,6 +46,85 @@ test('cross-pipe ordering is buffered until both actual session and turn are kno
   assert.equal(value.setTurn(2),false);
 });
 
+test('thousands of pre-confirmation deltas cannot evict attempt ends or strand retries', () => {
+  const accepted=[],value=createStreamProgressTracker(kind=>accepted.push(kind));
+  value.accept(start());
+  for(let index=0;index<5000;index++)value.accept(delta({index,revision:index+2,time:index}));
+  value.accept(end({revision:5002,index:5000}));
+  value.accept(start({attemptId:'s:2',revision:5003}));
+  value.accept(delta({attemptId:'s:2',revision:5004}));
+  value.setSession('s');value.setTurn(1);
+  assert.deepEqual(accepted,['model_output']); // compacted activity becomes known once
+  assert.equal(value.accept(delta({attemptId:'s:2',revision:5005,index:1})),true);
+  assert.equal(value.accept(delta({revision:5006,index:5001})),false);
+  value.accept(end({attemptId:'s:2',revision:5007,index:2}));
+  value.accept(start({attemptId:'s:3',revision:5008}));
+  assert.equal(value.accept(delta({attemptId:'s:3',revision:5009})),true);
+  assert.deepEqual(accepted,['model_output','model_output','model_output']);
+});
+
+test('pending compaction validates every frame without making malformed or repeated frames progress', () => {
+  const accepted=[],value=createStreamProgressTracker(kind=>accepted.push(kind));
+  for(let index=0;index<1000;index++)value.accept(delta({attemptId:'no-start',revision:index+1,index}));
+  value.accept(start());
+  for(const event of [delta({charCount:0}),delta({index:-1}),delta({blockIndex:-1}),delta({time:NaN}),
+    delta({deltaKind:'tool_arguments'}),delta({sessionId:'other'}),delta({attemptId:'other'}),delta({revision:1}),
+    end({outcome:{kind:'committed',eventType:'other',seq:0}}),end({outcome:{kind:'committed',eventType:'assistant/message',seq:-1}})]) {
+    for(let index=0;index<300;index++)assert.equal(value.accept(event),false);
+  }
+  value.setTurn(1);value.setSession('s');
+  assert.deepEqual(accepted,[]);
+  assert.equal(value.accept(delta()),true); // malformed frames changed no lifecycle state
+  assert.equal(value.accept(delta()),false);
+  value.setSession('s');value.setTurn(1);
+  assert.deepEqual(accepted,['model_output']); // idempotent confirmation cannot replay activity
+});
+
+test('pending session and turn candidates remain independent and retain only metadata', () => {
+  const accepted=[],value=createStreamProgressTracker(kind=>accepted.push(kind));
+  value.accept(start({sessionId:'other'}));value.accept(delta({sessionId:'other'}));
+  value.accept(start({attemptId:'wrong-turn',turn:2}));value.accept(delta({attemptId:'wrong-turn'}));
+  value.accept(start());
+  const privateField={get text(){throw Error('private text read');},get arguments(){throw Error('arguments read');}};
+  const malformed=delta({charCount:0});Object.defineProperties(malformed,Object.getOwnPropertyDescriptors(privateField));value.accept(malformed);
+  value.setSession('s');value.setTurn(1);
+  assert.deepEqual(accepted,[]);
+  const output=delta();Object.defineProperties(output,Object.getOwnPropertyDescriptors(privateField));
+  assert.equal(value.accept(output),true);
+  assert.equal(value.accept(delta({sessionId:'other',revision:10,index:1})),false);
+  assert.equal(value.accept(delta({attemptId:'wrong-turn',revision:10,index:1})),false);
+  assert.deepEqual(accepted,['model_output']);
+});
+
+test('pending identity budget rejects new starts but always processes existing attempt ends', () => {
+  const accepted=[],value=createStreamProgressTracker(kind=>accepted.push(kind));let revision=0;
+  for(let attempt=0;attempt<256;attempt++) {
+    const attemptId='attempt-'+attempt;
+    value.accept(start({attemptId,revision:++revision}));
+    value.accept(delta({attemptId,revision:++revision}));
+    value.accept(end({attemptId,revision:++revision}));
+  }
+  value.accept(start({attemptId:'over-budget',revision:++revision}));
+  value.accept(delta({attemptId:'over-budget',revision:++revision}));
+  value.setSession('s');value.setTurn(1);
+  assert.deepEqual(accepted,['model_output']);
+  value.accept(start({attemptId:'attempt-0',revision:++revision}));
+  assert.equal(value.accept(delta({attemptId:'attempt-0',revision:++revision})),false);
+  value.accept(start({attemptId:'new-live-attempt',revision:++revision}));
+  assert.equal(value.accept(delta({attemptId:'new-live-attempt',revision:++revision})),true);
+});
+
+test('authoritative identity frees pending capacity occupied by unrelated candidates', () => {
+  for(const firstIdentity of ['session','turn']) {
+    const accepted=[],value=createStreamProgressTracker(kind=>accepted.push(kind));
+    for(let index=0;index<256;index++)value.accept(start({sessionId:firstIdentity==='session'?'other-'+index:'s',turn:firstIdentity==='turn'?index+2:1,attemptId:'unrelated-'+index}));
+    if(firstIdentity==='session')value.setSession('s');else value.setTurn(1);
+    value.accept(start());value.accept(delta());
+    if(firstIdentity==='session')value.setTurn(1);else value.setSession('s');
+    assert.deepEqual(accepted,['model_output']);
+  }
+});
+
 test('output resets only idle, with an immutable total budget', () => {
   let now=0;const clock=createProgressClock({totalTimeoutMs:5000,idleTimeoutMs:2000},{now:()=>now});
   const value=createStreamProgressTracker(kind=>clock.markProgress(kind));value.setSession('s');value.setTurn(1);value.accept(start());
