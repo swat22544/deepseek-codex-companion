@@ -21,7 +21,9 @@
 | `skills/deepseek-helper` | 发起调用，固定模型设置，提供文件快照与受限工具，收集候选结果，并指导分项核验 |
 | `skills/deepseek-helper/scripts/verify-result.mjs` | 对保存的调用记录及可选 JSON 输出契约做机械检查，不执行候选或自动接受结果 |
 | `plugins/deepseek-monitor` | MCP 工具、只读 MCP App 和本机浏览器面板，展示任务、流式公开回复、活动及状态 |
+| `plugins/deepseek-monitor/hooks` | 每次用户输入前加载完整协作 Skill，会话恢复或压缩后补回规则；Codex 按 Skill 决定是否派遣 |
 | `scripts/install.mjs` | 安装 Skill 与插件文件，定位 Node.js，生成独立的本地插件市场 |
+| `scripts/register-task-hooks.mjs` | 显式登记或移除用户级任务 Hook，保留其他 Hook，并备份原配置 |
 | `examples` | 最小调用请求，以及可选的跨会话自动委派偏好示例 |
 | `test` 与各组件的 `test` | 无需账号、不会调用模型的本地测试 |
 | `docs/deepseek-capability-evaluation-2026-10-13.md` | 能力评估的方法、分项结果、实际反例、限制与 Skill 改进对应关系 |
@@ -76,6 +78,7 @@
 - Node.js 20 或更高版本，`node` 可用。已验证环境使用 Node.js 24。
 - 按使用的后端安装并完成 DeepSeek Harness／OpenCode 账号配置，能够使用上述 Flash / Max 设置。双路协作需要两条后端均可调用。
 - 支持本地插件和 Skill 的 Codex 桌面环境。插件安装命令在 Codex CLI `0.162.0-alpha.17.2` 验证。
+- 使用任务 Hook 时，Codex 需支持 `UserPromptSubmit`、`SessionStart` 和插件 Hook，并信任当前 Hook 定义。当前实测 CLI 的 `hooks` 功能已启用，不使用已移除的 `plugin_hooks` 开关。
 
 Harness 适配基于 **0.2.0-rc.2**，OpenCode 适配基于 CLI **2.0.28**。它们依赖相应事件和 CLI 接口，升级后可能需要适配。这里不承诺其他版本或其他操作系统兼容。调用使用后台进程，不要求把桌面窗口打开到前台，也不会让普通桌面会话继承辅助代理权限。
 
@@ -147,7 +150,27 @@ node scripts/install.mjs --dsh-home "D:\DeepSeek Harness" --opencode-cli "D:\Ope
 
 > 打开 DeepSeek 实时监看面板。
 
-若希望在后续对话中按需自动调用，阅读并自行采用 [examples/AGENTS.deepseek.md](examples/AGENTS.deepseek.md) 中的偏好。技能自动发现不代表已授权发送项目材料，安装者的实际指令与宿主权限始终优先。
+### 每次任务先加载协作规则
+
+1.2.0 将任务 Hook 一并放入现有插件。支持插件 Hook 的宿主可在 Codex CLI 输入 `/hooks`，审核 `deepseek-monitor` 的两个 Hook 并信任当前定义。安装或启用插件不会自动信任 Hook；修改定义后需要重新审核。未信任、被禁用或宿主不支持 Hook 时，自动加载不能生效。支持的当前接口见 [Codex Hooks](https://learn.chatgpt.com/docs/hooks) 和 [插件 Hook 打包说明](https://developers.openai.com/plugins/build/plugins)。
+
+实测 CLI `0.162.0-alpha.17.2` 的 Agent Plugins 格式清单会忽略插件 Hook 声明，同版本旧格式清单能发现 Hook。为此提供官方用户级 Hook 位置的兼容登记。在安装 Skill 和插件后执行：
+
+```powershell
+node scripts/register-task-hooks.mjs --codex-home "<CODEX_HOME>"
+```
+
+它仅在 `<CODEX_HOME>/hooks.json` 中合并本项目的两个任务 Hook，使用已安装脚本的绝对路径，不依赖插件环境变量。原有其他 Hook、混合组和顶层字段保留；修改前备份，重复登记不重复追加。随后在 `/hooks` 只审核并信任来源为该用户级文件的两条任务 Hook。插件级与用户级二选一，不同时启用两套定义。本机部署已采用并实际验证用户级方式；定义信任不由安装器或登记命令自动写入。
+
+- `UserPromptSubmit`：每次用户输入进入模型前，读取当前安装的完整 `deepseek-helper/SKILL.md`，注入 developer context，不依赖 Skill 名称/描述匹配。
+- `SessionStart`：会话恢复、压缩或 fork 后重新加载规则；不会按会话缓存而漏掉后续新任务。
+- Codex 先应用完整 Skill，再决定是否有值得委派的工作包。简单任务允许直接完成；两个独立工作包可分别派给 Harness 与 OpenCode。Hook 本身不启动任何模型。
+
+Hook 使用环境变量 `CODEX_HOME`，其次使用安装器生成的 `hooks/runtime.json`，未配置时使用当前主目录的 `.codex`。每次重新读取 Skill，详细参考仍按任务需要读取。它只使用事件名称，忽略 `prompt` 内容以及 `cwd`、`transcript_path` 字段，不打开这些字段指向的文件，也不保存对话或将输入交给后端。
+
+输入最多 1 MiB，Skill 最多 32 KiB，JSON 输出最多 256 KiB；读取错误、无效 UTF-8、错误 Skill 标识或超限会发出可见的固定错误码，不伪装成成功。因为脚本有明确上限，`additionalContextLimit: 0` 保证完整正文直接进入上下文，不被默认的 2,500 token 阈值替换成预览。Windows 使用显式 PowerShell 编码命令，设置 UTF-8 并调用安装时定位的 Node，避免默认 shell 与中文路径引用差异。编码只是命令传输形式，执行脚本就是包内的 `hooks/task-preflight.mjs`。
+
+若不用 Hook，也可自行采用 [examples/AGENTS.deepseek.md](examples/AGENTS.deepseek.md) 中的自动协作偏好。加载技能不代表已授权发送项目材料，安装者的实际指令与宿主权限始终优先。停用时在 `/hooks` 禁用这两个 Hook；用户级登记也可用 `node scripts/register-task-hooks.mjs --codex-home "<CODEX_HOME>" --remove` 精确移除，不删除其他配置。实现和验证范围见[任务 Hook 验证记录](docs/task-hook-validation-2026-10-14.md)。
 
 首次委派时 Skill 会尝试打开监看面板。MCP App 由宿主渲染；如未显示，Skill 会将本机浏览器面板打开到 Codex 右侧。也可手动启动浏览器后备入口：
 

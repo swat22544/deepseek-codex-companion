@@ -1,11 +1,12 @@
 {
   "name": "deepseek-monitor",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "在 Codex 内实时查看本机 DeepSeek 辅助任务的公开回复、工具活动与状态。",
   "author": {
     "name": "DeepSeek Codex Companion"
   },
   "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "DeepSeek Monitor",

@@ -8,12 +8,51 @@ const repository=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const json=async path=>JSON.parse((await readFile(path,'utf8')).replace(/^\uFEFF/,''));
 const exists=async path=>{try{await access(path);return true;}catch{return false;}};
 
+export function makeTaskHookCommands(nodeExecutable=process.execPath,scriptPath){
+  if(typeof nodeExecutable!=='string'||!isAbsolute(nodeExecutable))throw new Error('Task hook Node executable must be an absolute path.');
+  if(scriptPath!==undefined&&(typeof scriptPath!=='string'||!isAbsolute(scriptPath)))throw new Error('Task hook script must be an absolute path.');
+  const posixNode="'"+nodeExecutable.replaceAll("'","'\"'\"'")+"'";
+  const powershellNode="'"+nodeExecutable.replaceAll("'","''")+"'";
+  const posixScript=scriptPath===undefined?'"${PLUGIN_ROOT}/hooks/task-preflight.mjs"':"'"+scriptPath.replaceAll("'","'\"'\"'")+"'";
+  const powershellScript=scriptPath===undefined?"(Join-Path $env:PLUGIN_ROOT 'hooks/task-preflight.mjs')":"'"+scriptPath.replaceAll("'","''")+"'";
+  const windowsScript=[
+    "$ProgressPreference='SilentlyContinue'",
+    '[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false)',
+    '[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)',
+    '$OutputEncoding=[Console]::OutputEncoding',
+    `& ${powershellNode} ${powershellScript}`,
+    'exit $LASTEXITCODE'
+  ].join('; ');
+  return {
+    command:`${posixNode} ${posixScript}`,
+    commandWindows:'powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand '+Buffer.from(windowsScript,'utf16le').toString('base64')
+  };
+}
+
+function configureTaskHookCommands(config){
+  if(!config?.hooks||typeof config.hooks!=='object'||Array.isArray(config.hooks))throw new Error('Task hook configuration must contain hook events.');
+  const commands=makeTaskHookCommands();
+  let updated=0;
+  for(const groups of Object.values(config.hooks)){
+    if(!Array.isArray(groups))throw new Error('Task hook events must contain hook groups.');
+    for(const group of groups){
+      if(!Array.isArray(group?.hooks))throw new Error('Task hook groups must contain hooks.');
+      for(const hook of group.hooks)if(hook?.type==='command'){
+        Object.assign(hook,commands);updated++;
+      }
+    }
+  }
+  if(!updated)throw new Error('Task hook configuration must contain command hooks.');
+  return config;
+}
+
 export async function install({codexHome=process.env.CODEX_HOME||join(homedir(),'.codex'),dshHome,opencodeCli,overwrite=false,allowNonWindows=false}={}){
   if(process.platform!=='win32'&&!allowNonWindows)throw new Error('The current DeepSeek Harness adapter supports Windows only.');
   codexHome=resolve(codexHome);
   if(!isAbsolute(codexHome))throw new Error('CODEX_HOME must be absolute');
   if(dshHome){dshHome=resolve(dshHome);if(!await exists(join(dshHome,'DeepSeek Harness.exe')))throw new Error('DeepSeek Harness.exe was not found in --dsh-home.');}
   const pluginTarget=join(codexHome,'plugins','deepseek-monitor'),skillTarget=join(codexHome,'skills','deepseek-helper');
+  const hookConfigPath=join(pluginTarget,'hooks','hooks.json'),hookRuntimePath=join(pluginTarget,'hooks','runtime.json');
   const targets=[pluginTarget,skillTarget];
   for(const target of targets)if(await exists(target)&&!overwrite)throw new Error('Already installed: '+target+'. Use --overwrite to back up and replace this component.');
   const localConfigPath=join(skillTarget,'helper.config.json'),localConfig={};
@@ -40,6 +79,8 @@ export async function install({codexHome=process.env.CODEX_HOME||join(homedir(),
     const executableStat=await stat(localConfig.opencodeExecutable).catch(()=>null);
     if(!executableStat?.isFile())throw new Error('OpenCode CLI executable was not found at --opencode-cli or the installed application path.');
   }
+  // Validate the shipped hooks before backing up or replacing an installation.
+  const taskHookConfig=configureTaskHookCommands(await json(join(repository,'plugins','deepseek-monitor','hooks','hooks.json')));
   let backupDirectory=null;
   if(overwrite&&await Promise.all(targets.map(exists)).then(values=>values.some(Boolean))){
     backupDirectory=join(codexHome,'backups','deepseek-companion-'+Date.now());await mkdir(backupDirectory,{recursive:true});
@@ -54,6 +95,11 @@ export async function install({codexHome=process.env.CODEX_HOME||join(homedir(),
     config.mcpServers['deepseek-monitor'].env={...config.mcpServers['deepseek-monitor'].env,CODEX_HOME:codexHome};
     await writeFile(path,JSON.stringify(config,null,2)+'\n');
   }
+  // The plugin owns its hook files. Keep application-wide hook configuration
+  // and trust decisions untouched; the runtime only needs the selected root.
+  await mkdir(dirname(hookRuntimePath),{recursive:true});
+  await writeFile(hookConfigPath,JSON.stringify(taskHookConfig,null,2)+'\n');
+  await writeFile(hookRuntimePath,JSON.stringify({codexHome},null,2)+'\n');
   // Persist only known application paths, preserving either backend when the
   // caller updates just the other. Credentials and unknown fields are not copied.
   if(Object.keys(localConfig).length)await writeFile(localConfigPath,JSON.stringify(localConfig,null,2)+'\n');
@@ -64,13 +110,13 @@ export async function install({codexHome=process.env.CODEX_HOME||join(homedir(),
   await mkdir(dirname(marketplacePlugin),{recursive:true});await cp(pluginTarget,marketplacePlugin,{recursive:true,force:true});
   const manifest={name:'deepseek-codex-companion',interface:{displayName:'DeepSeek Codex Companion'},plugins:[{name:'deepseek-monitor',source:{source:'local',path:'./plugins/deepseek-monitor'},policy:{installation:'AVAILABLE',authentication:'ON_INSTALL'},category:'Productivity'}]};
   await writeFile(join(installedMarketplace,'.agents','plugins','marketplace.json'),JSON.stringify(manifest,null,2)+'\n');
-  return {pluginTarget,skillTarget,marketplaceRoot:installedMarketplace,backupDirectory,dshHome:localConfig.installation??null,opencodeExecutable:localConfig.opencodeExecutable??null,nextCommands:[`codex plugin marketplace add "${installedMarketplace}" --json`,'codex plugin add deepseek-monitor@deepseek-codex-companion --json']};
+  return {pluginTarget,skillTarget,marketplaceRoot:installedMarketplace,backupDirectory,hookConfigPath,hookRuntimePath,hooksIncluded:true,hookTrustRequired:true,dshHome:localConfig.installation??null,opencodeExecutable:localConfig.opencodeExecutable??null,nextCommands:[`codex plugin marketplace add "${installedMarketplace}" --json`,'codex plugin add deepseek-monitor@deepseek-codex-companion --json']};
 }
 
 export async function main(){
   const args=process.argv.slice(2),options={};
   for(let i=0;i<args.length;i++){
-    if(args[i]==='--help'){console.log('node scripts/install.mjs [--dsh-home "D:/DeepSeek Harness"] [--opencode-cli ABSOLUTE_EXE] [--codex-home PATH] [--overwrite]\nCopies the Skill and plugin, resolves Node, preserves application paths, and creates a local marketplace.\nIt does not edit global AGENTS.md, log in, or call a model.');return;}
+    if(args[i]==='--help'){console.log('node scripts/install.mjs [--dsh-home "D:/DeepSeek Harness"] [--opencode-cli ABSOLUTE_EXE] [--codex-home PATH] [--overwrite]\nCopies the Skill and plugin with task preflight hooks, resolves Node, preserves application paths, and creates a local marketplace.\nAfter registering the plugin, review its hooks in Codex /hooks; native hook trust is still required.\nIt does not edit global hooks, AGENTS.md, configuration or trust, log in, or call a model.');return;}
     if(args[i]==='--overwrite')options.overwrite=true;
     else if(['--dsh-home','--codex-home','--opencode-cli'].includes(args[i])){if(!args[i+1]||args[i+1].startsWith('--'))throw new Error('Missing path argument');const key={'--dsh-home':'dshHome','--codex-home':'codexHome','--opencode-cli':'opencodeCli'}[args[i]];options[key]=args[++i];}
     else throw new Error('Unknown argument: '+args[i]);

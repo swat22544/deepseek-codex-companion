@@ -1,0 +1,34 @@
+{
+  "description": "Load the installed deepseek-helper rules before each user task; Codex decides whether to delegate.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/task-preflight.mjs\"",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand JABQAHIAbwBnAHIAZQBzAHMAUAByAGUAZgBlAHIAZQBuAGMAZQA9ACcAUwBpAGwAZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQAnADsAIABbAEMAbwBuAHMAbwBsAGUAXQA6ADoASQBuAHAAdQB0AEUAbgBjAG8AZABpAG4AZwA9AFsAUwB5AHMAdABlAG0ALgBUAGUAeAB0AC4AVQBUAEYAOABFAG4AYwBvAGQAaQBuAGcAXQA6ADoAbgBlAHcAKAAkAGYAYQBsAHMAZQApADsAIABbAEMAbwBuAHMAbwBsAGUAXQA6ADoATwB1AHQAcAB1AHQARQBuAGMAbwBkAGkAbgBnAD0AWwBTAHkAcwB0AGUAbQAuAFQAZQB4AHQALgBVAFQARgA4AEUAbgBjAG8AZABpAG4AZwBdADoAOgBuAGUAdwAoACQAZgBhAGwAcwBlACkAOwAgACQATwB1AHQAcAB1AHQARQBuAGMAbwBkAGkAbgBnAD0AWwBDAG8AbgBzAG8AbABlAF0AOgA6AE8AdQB0AHAAdQB0AEUAbgBjAG8AZABpAG4AZwA7ACAAJgAgAG4AbwBkAGUAIAAoAEoAbwBpAG4ALQBQAGEAdABoACAAJABlAG4AdgA6AFAATABVAEcASQBOAF8AUgBPAE8AVAAgACcAaABvAG8AawBzAC8AdABhAHMAawAtAHAAcgBlAGYAbABpAGcAaAB0AC4AbQBqAHMAJwApADsAIABlAHgAaQB0ACAAJABMAEEAUwBUAEUAWABJAFQAQwBPAEQARQA=",
+            "timeout": 5,
+            "additionalContextLimit": 0,
+            "statusMessage": "加载 DeepSeek 协作规则，评估本次任务分工"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "^(resume|compact|fork)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/task-preflight.mjs\"",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand JABQAHIAbwBnAHIAZQBzAHMAUAByAGUAZgBlAHIAZQBuAGMAZQA9ACcAUwBpAGwAZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQAnADsAIABbAEMAbwBuAHMAbwBsAGUAXQA6ADoASQBuAHAAdQB0AEUAbgBjAG8AZABpAG4AZwA9AFsAUwB5AHMAdABlAG0ALgBUAGUAeAB0AC4AVQBUAEYAOABFAG4AYwBvAGQAaQBuAGcAXQA6ADoAbgBlAHcAKAAkAGYAYQBsAHMAZQApADsAIABbAEMAbwBuAHMAbwBsAGUAXQA6ADoATwB1AHQAcAB1AHQARQBuAGMAbwBkAGkAbgBnAD0AWwBTAHkAcwB0AGUAbQAuAFQAZQB4AHQALgBVAFQARgA4AEUAbgBjAG8AZABpAG4AZwBdADoAOgBuAGUAdwAoACQAZgBhAGwAcwBlACkAOwAgACQATwB1AHQAcAB1AHQARQBuAGMAbwBkAGkAbgBnAD0AWwBDAG8AbgBzAG8AbABlAF0AOgA6AE8AdQB0AHAAdQB0AEUAbgBjAG8AZABpAG4AZwA7ACAAJgAgAG4AbwBkAGUAIAAoAEoAbwBpAG4ALQBQAGEAdABoACAAJABlAG4AdgA6AFAATABVAEcASQBOAF8AUgBPAE8AVAAgACcAaABvAG8AawBzAC8AdABhAHMAawAtAHAAcgBlAGYAbABpAGcAaAB0AC4AbQBqAHMAJwApADsAIABlAHgAaQB0ACAAJABMAEEAUwBUAEUAWABJAFQAQwBPAEQARQA=",
+            "timeout": 5,
+            "additionalContextLimit": 0,
+            "statusMessage": "恢复 DeepSeek 协作规则"
+          }
+        ]
+      }
+    ]
+  }
+}

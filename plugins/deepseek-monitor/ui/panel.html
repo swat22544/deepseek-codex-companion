@@ -390,7 +390,7 @@
         if (window.parent === window) return Promise.reject(new Error('请从 Codex 或本地监看地址打开面板。'));
         if (!bridgePromise) {
           const version = activityVersion;
-          const initializing = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.1.2' }, appCapabilities: {} })
+          const initializing = rpcRequest('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'deepseek-monitor', version: '1.2.0' }, appCapabilities: {} })
             .then(() => {
               if (!canRefresh() || version !== activityVersion) throw new Error('面板已暂停或关闭');
               rpcNotify('ui/notifications/initialized', {});
