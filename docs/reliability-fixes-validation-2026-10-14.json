@@ -54,14 +54,73 @@
     "monitorAvailable": true
   },
   "installation": {
+    "stage": "initial_isolated_verification",
     "isolatedRoot": true,
     "manifestVersion": "1.1.2",
     "installedVerifierContractPassed": true,
     "productionInstallationReplaced": false
   },
+  "localUpgradeSupplement": {
+    "version": "1.1.2",
+    "productionInstallationUpgraded": true,
+    "skillFilesVerified": 39,
+    "pluginCopiesVerified": 3,
+    "pluginFilesPerCopy": 19,
+    "fileHashMismatches": 0,
+    "existingRunsPreserved": 50,
+    "existingRunHashMismatches": 0,
+    "backendPathsPreserved": true,
+    "harnessSmoke": {
+      "backend": "harness",
+      "mode": "inspect",
+      "model": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "reasoningEffort": "max"
+      },
+      "elapsedMs": 4626,
+      "modelRequests": 2,
+      "tools": ["helper_read_file", "helper_search_text"],
+      "observedDelegateExitCode": 0,
+      "ok": true,
+      "strictJsonContractPassed": true,
+      "snapshotHashMatched": true,
+      "cleanupIncomplete": false,
+      "monitorAvailable": true
+    },
+    "opencodeSmoke": {
+      "backend": "opencode",
+      "mode": "propose",
+      "model": {
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "reasoningEffort": "max"
+      },
+      "elapsedMs": 10144,
+      "modelRequests": 3,
+      "tools": ["helper_read_file", "helper_write_artifact"],
+      "observedDelegateExitCode": 0,
+      "ok": true,
+      "policyActive": true,
+      "modelSelectionVerified": true,
+      "runtimeEvidenceVerified": true,
+      "guardAuditRecords": 10,
+      "guardSequenceAndIdentityVerified": true,
+      "wireVerifiedModelRequests": 3,
+      "toolArgumentsProgressRecords": 2,
+      "toolProcessGone": true,
+      "strictJsonContractPassed": true,
+      "snapshotHashMatched": true,
+      "artifactHashMatched": true,
+      "artifactContentMatched": true,
+      "remainingRunDirectoryProcesses": 0,
+      "cleanupIncomplete": false,
+      "monitorAvailable": true
+    },
+    "scope": "Installed-runner smoke calls and independently checked small deliverables; not general reliability or P1 isolation acceptance."
+  },
   "limitations": [
     "P1 OpenCode external configuration isolation deferred.",
-    "No additional real OpenCode provider run in this release.",
     "BFCache script-level VM validation only.",
     "No long-duration stress or cross-platform runtime evaluation."
   ]
