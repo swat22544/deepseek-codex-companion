@@ -6,12 +6,12 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
-import { createMcpHandler, serveStdio, MAX_LINE_BYTES } from '../scripts/opencode-tools.mjs';
+import { createMcpHandler, serveStdio, MAX_LINE_BYTES } from '../scripts/helper-mcp.mjs';
 import { snapshotFiles, hash, TOOL_NAMES } from '../scripts/helper-policy.mjs';
 
-const directory = await mkdtemp(join(tmpdir(), 'opencode-tools-test-'));
+const directory = await mkdtemp(join(tmpdir(), 'backend-tools-test-'));
 after(async () => {
-  assert.match(relative(resolve(tmpdir()), resolve(directory)), /^opencode-tools-test-[^\\/]+$/);
+  assert.match(relative(resolve(tmpdir()), resolve(directory)), /^backend-tools-test-[^\\/]+$/);
   await rm(directory, { recursive: true, force: true });
 });
 const policy = (mode = 'inspect', extra = {}) => ({
@@ -173,7 +173,7 @@ test('bounded stdio parser recovers after malformed/oversized input and handles 
 });
 
 test('stdio CLI starts import-safely and emits only protocol stdout and sanitized audit', async () => {
-  const path = fileURLToPath(new URL('../scripts/opencode-tools.mjs', import.meta.url));
+  const path = fileURLToPath(new URL('../scripts/helper-mcp.mjs', import.meta.url));
   const policyPath = join(directory, 'cli-policy.json'), auditPath = join(directory, 'cli-audit.jsonl');
   await writeFile(policyPath, JSON.stringify(policy('inspect', { files: [{ id: 'f1', name: 'sample.txt', source: 'private source path', content: 'snapshot-secret', bytes: 15, sha256: hash('snapshot-secret') }] })));
   const child = spawn(process.execPath, [path, policyPath, auditPath], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });

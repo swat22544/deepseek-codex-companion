@@ -19,6 +19,13 @@ test('request backwards compatibility and finite budgets',()=>{
  assert.throws(()=>validateRequest({taskType:'review',instruction:'x',input:'',timeoutMs:3600001}));
  assert.throws(()=>validateRequest({taskType:'review',instruction:'x',input:'',mode:'inspect',files:['../x']}));
 });
+test('new requests select Harness or ZCode and reject unconfigured backends',()=>{
+ const request={taskType:'review',instruction:'Check supplied evidence',input:''};
+ assert.equal(validateRequest(request).backend,'harness');
+ for(const backend of ['harness','zcode'])assert.equal(validateRequest({...request,backend}).backend,backend);
+ assert.throws(()=>validateRequest({...request,backend:'retired-backend'}),/backend must/);
+ for(const backend of ['',null,{},'ZCode','unknown'])assert.throws(()=>validateRequest({...request,backend}),/backend must/);
+});
 test('snapshots immutable and reads/search bounded',async()=>{
  await writeFile(file,'changed');const r=createToolRuntime(policy('inspect'));
  assert.match((await r.execute('helper_read_file',{file:'f1'})).text,/2: needle/);

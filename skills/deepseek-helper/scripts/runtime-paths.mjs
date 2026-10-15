@@ -3,7 +3,7 @@ import {homedir} from 'node:os';
 import {readFileSync} from 'node:fs';
 
 export const DEFAULT_HARNESS_HOME = 'D:/DeepSeek Harness';
-export const DEFAULT_OPENCODE_CLI = 'D:/OpenCode/@opencodedesktop/resources/opencode-cli.exe';
+export const DEFAULT_ZCODE_HOME = 'D:/Zcode';
 const defaultConfigPath = new URL('../helper.config.json', import.meta.url);
 
 export function resolveCodexHome({env=process.env, home=homedir()}={}) {
@@ -14,9 +14,9 @@ export function resolveCodexHome({env=process.env, home=homedir()}={}) {
 // Callers can replace a known path before validation, without preserving other
 // local fields or ever reading backend credentials.
 export function validateConfiguredPaths(config) {
-  if(!config||typeof config!=='object'||Array.isArray(config)||!['installation','opencodeExecutable'].some(key=>Object.hasOwn(config,key)))throw new Error('helper.config.json must contain an absolute installation or opencodeExecutable path.');
+  if(!config||typeof config!=='object'||Array.isArray(config)||!['installation','zcodeInstallation'].some(key=>Object.hasOwn(config,key)))throw new Error('helper.config.json must contain an absolute installation or zcodeInstallation path.');
   const paths={};
-  for(const key of ['installation','opencodeExecutable'])if(Object.hasOwn(config,key)){
+  for(const key of ['installation','zcodeInstallation'])if(Object.hasOwn(config,key)){
     if(typeof config[key]!=='string'||!isAbsolute(config[key]))throw new Error('helper.config.json must contain absolute application paths.');
     paths[key]=config[key];
   }
@@ -47,10 +47,11 @@ export function resolveRuntimePaths({env=process.env, home=homedir(), configPath
   };
 }
 
-// Only application paths are read here. OpenCode's profile/auth files remain
-// exclusively under OpenCode's own control and are never read by this resolver.
-export function resolveOpenCodePaths({env=process.env, home=homedir(), configPath=defaultConfigPath}={}) {
-  const executable=env.DEEPSEEK_OPENCODE_CLI||configuredPaths(configPath).opencodeExecutable||DEFAULT_OPENCODE_CLI;
-  if(typeof executable!=='string'||!isAbsolute(executable))throw new Error('OpenCode CLI executable must be an absolute path.');
-  return {executable:resolve(executable),codexHome:resolveCodexHome({env,home})};
+// Resolve the shipped ZCode CLI through the current Node runtime. This only
+// selects installation paths; ZCode account and data locations are not inferred.
+export function resolveZCodePaths({env=process.env, home=homedir(), configPath=defaultConfigPath}={}) {
+  const installation=env.DEEPSEEK_ZCODE_HOME||configuredPaths(configPath).zcodeInstallation||DEFAULT_ZCODE_HOME;
+  if(typeof installation!=='string'||!isAbsolute(installation))throw new Error('ZCode installation must be an absolute path.');
+  const root=resolve(installation);
+  return {installation:root,executable:process.execPath,entrypoint:join(root,'resources','glm','zcode.cjs'),codexHome:resolveCodexHome({env,home})};
 }

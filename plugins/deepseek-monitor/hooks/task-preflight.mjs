@@ -77,7 +77,7 @@ export async function runHook({stdin=process.stdin,stdout=process.stdout,env=pro
     const frontmatter=/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
     const names=frontmatter?.[1].split(/\r?\n/).filter(line=>/^name:/.test(line))??[];
     if(names.length!==1||!/^name:[ \t]*(?:deepseek-helper|"deepseek-helper"|'deepseek-helper')[ \t]*$/.test(names[0])||text.includes('\0'))throw error('INVALID_SKILL');
-    const context=`本次任务先应用下方已由 Hook 读取的 deepseek-helper 完整技能，不再依赖名称与描述筛选。按技能判断是否存在值得委派、材料充分且可独立核验的工作包；简单任务可以不派遣。后端分工、权限、预算、持续协作与验收均依照正文及当前用户授权和宿主指令。Hook 仅加载规则，未调用 DeepSeek，也未把用户输入交给外部服务。\n\n技能来源：${path}\n\n${text}`;
+    const context=`本次任务先应用下方已由 Hook 读取的 deepseek-helper 完整技能，不再依赖名称与描述筛选。按技能判断是否存在值得委派、材料充分且可独立核验的工作包；简单任务可以不派遣。正文适用于 Harness 与 ZCode 协作；后端分工、权限、预算、持续协作与验收均依照正文及当前用户授权和宿主指令。Hook 仅加载规则，未调用外部模型，也未把用户输入交给外部服务。\n\n技能来源：${path}\n\n${text}`;
     emit(stdout,{hookSpecificOutput:{hookEventName:event,additionalContext:context}});
     return {loaded:true,event};
   }catch(e){

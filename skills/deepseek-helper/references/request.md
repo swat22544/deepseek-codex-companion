@@ -16,14 +16,14 @@
 }
 ```
 
-`backend` 仅支持 `harness` 或 `opencode`；它选择运行适配器，不扩大 `mode` 的权限。不把可执行文件路径、密钥或后端配置放进该字段。未知值应拒绝，不静默路由到另一条后端。OpenCode 请求显式填写 `"backend": "opencode"`，其他任务、文件与时间字段的含义相同。
+`backend` 仅支持 `harness` 或 `zcode`；它选择运行适配器，不扩大 `mode` 的权限。不把可执行文件路径、密钥或后端配置放进该字段。不支持的后端应明确拒绝，不静默路由到另一条后端。ZCode 请求显式填写 `"backend": "zcode"`，其他任务、文件与时间字段的含义相同。
 
 | 后端 | 固定模型与推理等级 | 本机程序位置 |
 | --- | --- | --- |
 | `harness` | `deepseek-official / deepseek-flash / max` | `DEEPSEEK_HARNESS_HOME` 优先，其次技能目录 `helper.config.json` 的 `installation`，默认 `D:/DeepSeek Harness` |
-| `opencode` | `deepseek / deepseek-flash / max`，即 `deepseek/deepseek-flash#max` | `DEEPSEEK_OPENCODE_CLI` 优先，其次 `helper.config.json` 的 `opencodeExecutable`，默认 `D:/OpenCode/@opencodedesktop/resources/opencode-cli.exe` |
+| `zcode` | `zai-standard-api / GLM-5.3-Flash / max`，显示为 **GLM-5.3-Flash / Max** | `DEEPSEEK_ZCODE_HOME` 优先，其次 `helper.config.json` 的 `zcodeInstallation`，默认 `D:/Zcode` |
 
-OpenCode 适配基于 CLI **2.0.28**，使用后台 CLI 和独立受控会话，不依赖桌面窗口保持前台。它复用本机 OpenCode 已配置的认证；主代理不读取或复制认证内容，不在请求、监看或发布材料中存放密钥。使用安装器的 `--opencode-cli PATH` 保存实际 CLI 位置。
+ZCode 通过本机 CLI 的后台 `app-server` 建立独立受控会话，不依赖桌面窗口保持前台；只向本次会话提供快照 MCP 工具。模型接入使用 `zai-standard-api` 的 Z.ai 标准 API `https://api.z.ai/api/paas/v4`、Chat Completions 协议，固定大小写一致的 `GLM-5.3-Flash` 与最高思考强度 `max`。适配器须核对实际提供方配置与运行证据，不能仅凭界面显示名认定匹配，也不改用 Coding Plan 接口。它复用 ZCode 已配置的认证，不复制密钥到请求、候选目录、监看或发布材料。使用安装器的 `--zcode-home PATH` 保存实际程序目录。
 
 `taskType`：`extract`、`classify`、`format`、`draft`、`analyze`、`review`、`debug`、`plan`、`implement`、`test-design`。它描述工作类型，权限仅由 `mode` 决定。`implement` 产生候选实现，不能直接修改项目。
 
@@ -49,24 +49,24 @@ OpenCode 适配基于 CLI **2.0.28**，使用后台 CLI 和独立受控会话，
 - `helper_search_text`：对全部或指定快照进行区分大小写的文字搜索，不执行正则，最多返回 60 条位置。
 - `helper_write_artifact`：仅 `propose` 提供；在本次 `artifacts/` 内创建平铺文件名，不允许目录、设备名或替换已有文件。每个最多 256 KiB、合计 1 MiB、最多 12 个。可以提交代码、测试、diff、patch 和文档；创建不等于执行或应用。
 
-快照与候选稿在当前任务的 `work/deepseek-runs/` 中；Harness 使用 `task-*`，OpenCode 使用 `opencode-*` 独立运行目录。脚本不会读取主代理未列出的项目文件；通常无需把整个工程或聊天记录交给 DeepSeek。
+快照与候选稿在当前任务的 `work/deepseek-runs/` 中，两路使用独立运行目录。脚本不会读取主代理未列出的项目文件；通常无需把整个工程或聊天记录交给辅助模型。
 
 ## 并行与反馈
 
-一个请求只包含一个后端与一个工作包。两个没有未满足依赖的工作包可分别写成 Harness 和 OpenCode 请求，使用不同结果文件，并行启动两次 `delegate.mjs`。主代理通常各启一路，分别跟踪退出、结果和候选；不要同时写同一个请求/结果文件，也不要将同一实现重复派发。模型回复不会自动流入另一条会话。
+一个请求只包含一个后端与一个工作包。两个没有未满足依赖的工作包可分别写成 Harness 和 ZCode 请求，使用不同结果文件，并行启动两次 `delegate.mjs`。主代理通常各启一路，分别跟踪退出、结果和候选；不要同时写同一个请求/结果文件，也不要将同一实现重复派发。模型回复不会自动流入另一条会话。
 
 每路都允许主代理根据验证反馈继续派发新会话；切换后端不能重置同一交付物、同一纠错目标的两轮默认上限。需要前一包输出的后续工作先等其独立核验通过，再提供必要结果作为新输入。两路同时成功只证明对应调用完成，不能代替交付验收，也不能据此承诺提速或额度节省。
 
 ## 检查结果
 
-从 1.1.1 起，OpenCode 结果还包含安全的 `errorDetails` 和 `diagnosticRecovery`，用于区分已记录的错误类型、HTTP 状态、来源及只读补充诊断。旧记录缺失时不补造；含义与失败处理见 [错误诊断](diagnostics.md)。
+失败时读取安全的 `errorDetails`，区分实际记录的错误类型、HTTP 状态与来源。ZCode 不执行额外会话补查，不为补充诊断重跑模型；缺失字段不补造。含义与失败处理见 [错误诊断](diagnostics.md)。
 
 结果是待核验候选；调用完成、格式符合要求和内容可采用应分别判断。分项方法见 [verification.md](verification.md)，可选机械检查命令及 JSON 契约见 [verification-contract.md](verification-contract.md)。契约文件仅供主代理本地检查，不是运行器请求中的新字段，也不必把独立答案交给模型。
 
-结果 JSON 保留旧字段 `ok/trust/verificationRequired/modelSelection/sessionId/final`，另含 `backend`、`mode`、`modelRequests`、`toolCalls`、`toolResults`、`toolAudit`、`cleanup`、`runDirectory`、`snapshots` 和 `artifacts`。OpenCode 调用还要求 `runtimeEvidenceVerified: true`；这与配置中选择模型不同，表示适配器已核对实际运行证据。`backend` 应与本次请求一致；旧结果缺字段时按 Harness 协议检查。结果的 `timing` 是已解析预算、规模依据与进展计时，`timeout` 未触发时为 `null`，触发时含 `kind: "total" | "idle"`、限值和经过时间；旧记录缺少计时字段不代表损坏。
+结果 JSON 保留 `ok/trust/verificationRequired/modelSelection/sessionId/final`，另含 `backend`、`mode`、`modelRequests`、`toolCalls`、`toolResults`、`toolAudit`、`cleanup`、`runDirectory`、`snapshots` 和 `artifacts`。ZCode 调用还要求 `runtimeEvidenceVerified: true`；这与配置中选择模型不同，表示适配器已核对实际运行证据。`backend` 应与本次请求一致；旧结果缺字段时按 Harness 协议检查，显式不支持的后端不能退回 Harness。结果的 `timing` 是已解析预算、规模依据与进展计时，`timeout` 未触发时为 `null`，触发时含 `kind: "total" | "idle"`、限值和经过时间；旧记录缺少计时字段不代表损坏。
 
 `snapshots` 含原始路径和哈希，便于主代理判断候选所依据的版本；模型工具只按 ID 访问其内容。`artifacts` 含候选文件绝对路径、大小与哈希。失败调用的部分输出和文件也可能存在，不能作为完成结果直接使用。
 
 同一交付物、同一纠错目标默认至多两次反馈续作，每次都是新会话；这是 Skill 的停止条件，运行器没有“整个任务只能调用一次”或“整个对话只有两次”的限制。后续新的实现、测试或需求工作包可以继续由主代理派发，不通过假拆分绕过纠错上限。主代理挑选上轮必要的结论、候选文件和验证失败信息，写入新的 `input/feedback/files`；不自动携带整个会话、不递归委派。发现遗漏可补充新快照，但每次扩大范围都应由主代理主动决定。
 
-Harness 专用 `codex-helper` profile 只允许已知的 base/headless 组合及空用户补丁。不要往此 profile 安装桌面插件；普通桌面插件继续保留在 `desktop`。如果专用 profile 被改动，或 DSH 主目录出现非空的全局 `cordis.patch.yml`，脚本拒绝调用，主代理检查原因后再修复。OpenCode 也必须经本适配器的受限工具与模型核验，不用普通桌面会话或直接 CLI 命令绕开控制。任一路认证、工具或模型检查失败时先诊断，不静默转往另一个后端。
+Harness 专用 `codex-helper` profile 只允许已知的 base/headless 组合及空用户补丁。不要往此 profile 安装桌面插件；普通桌面插件继续保留在 `desktop`。如果专用 profile 被改动，或 DSH 主目录出现非空的全局 `cordis.patch.yml`，脚本拒绝调用，主代理检查原因后再修复。ZCode 也必须经本适配器的受限工具与模型核验，不用普通桌面会话或直接 CLI 命令绕开控制。任一路认证、工具或模型检查失败时先诊断，不静默转往另一个后端。

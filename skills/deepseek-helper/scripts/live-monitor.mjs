@@ -43,9 +43,12 @@ export async function createMonitor(request, {directory,io={},sleep=delay,heartb
   const id=randomUUID(),start=Date.now(),path=join(dir,id+'.json');
   const title=String(request?.title??request?.instruction??'DeepSeek task').split(/[\n。]/,1)[0].replace(/\s+/g,' ').slice(0,100);
   // Backend is a display discriminator, never an installation path or config.
-  const backend=request?.backend==='opencode'?'opencode':'harness';
-  const backendLabel=backend==='opencode'?'OpenCode':'Harness';
-  const state={version:1,id,title,backend,taskType:request?.taskType,mode:request?.mode??'text',status:'preparing',startedAt:new Date(start).toISOString(),updatedAt:new Date(start).toISOString(),elapsedMs:0,model:{model:'deepseek-flash',reasoningEffort:'max'},policyActive:false,modelSelectionVerified:false,reply:'',draft:'',events:[],artifacts:[],error:null,errorDetails:null,errorEvidence:[],diagnosticRecovery:null,timing:null,timeout:null,done:false};
+  const backend=request?.backend===undefined?'harness':request.backend;
+  if(!['harness','zcode'].includes(backend))throw new Error('Unsupported monitor backend');
+  const backendLabel=backend==='zcode'?'ZCode':'Harness';
+  const model=backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash';
+  const modelLabel=backend==='zcode'?'GLM-5.3-Flash':'DeepSeek-V41-Flash';
+  const state={version:1,id,title,backend,taskType:request?.taskType,mode:request?.mode??'text',status:'preparing',startedAt:new Date(start).toISOString(),updatedAt:new Date(start).toISOString(),elapsedMs:0,model:{model,reasoningEffort:'max'},policyActive:false,modelSelectionVerified:false,reply:'',draft:'',events:[],artifacts:[],error:null,errorDetails:null,errorEvidence:[],diagnosticRecovery:null,timing:null,timeout:null,done:false};
   const fileIO={mkdir,writeFile,rename,...io};
   const retryDelays=[40,120,300];
   const transientCodes=new Set(['EACCES','EPERM','EBUSY','EMFILE','ENFILE','EINTR','ETXTBSY','ENOENT']);
@@ -110,7 +113,7 @@ export async function createMonitor(request, {directory,io={},sleep=delay,heartb
     activity,timing,
     harness(event){
       if(finished)return;
-      if(event.type==='session'){state.status='running';activity('session',`DeepSeek 已启动 · ${backendLabel}`);}
+      if(event.type==='session'){state.status='running';activity('session',`${modelLabel} 已启动 · ${backendLabel}`);}
       if(event.type==='status'&&event.phase==='step_start')activity('step','开始处理步骤',{step:event.step});
       if(event.type==='tool_call')activity('tool','调用工具',{tool:event.tool,status:'running'});
       if(event.type==='tool_result')activity('tool-result','工具返回',{status:event.status});
@@ -120,7 +123,7 @@ export async function createMonitor(request, {directory,io={},sleep=delay,heartb
     control(data){
       if(finished)return;
       if(data.event==='active'){state.policyActive=true;activity('policy','调用权限已确认');}
-      if(data.event==='model'){state.modelSelectionVerified=true;activity('model',`Flash / Max 已确认 · ${backendLabel}`);}
+      if(data.event==='model'){state.modelSelectionVerified=true;activity('model',`${modelLabel} / Max 已确认 · ${backendLabel}`);}
       if(data.event==='reply_stream'&&!finalSeen){
         if(data.type==='start'){attempt=data.attemptId;blocks=new Map();state.draft='';activity('response','正在生成回复');}
         if(data.type==='text_delta'&&data.attemptId===attempt&&typeof data.text==='string'){

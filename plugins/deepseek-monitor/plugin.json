@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "deepseek-monitor",
-  "version": "1.2.0",
-  "description": "在 Codex 内实时查看本机 DeepSeek 辅助任务的公开回复、工具活动与状态。",
+  "version": "1.3.0",
+  "description": "在 Codex 内实时查看本机 DeepSeek 与 GLM 辅助任务的公开回复、工具活动与状态。",
   "author": {
     "name": "DeepSeek Codex Companion"
   },
@@ -11,8 +11,8 @@
       "hooks": "./hooks/hooks.json",
       "interface": {
         "displayName": "DeepSeek Monitor",
-        "shortDescription": "实时查看 DeepSeek 协作进度",
-        "longDescription": "本地只读监看面板，展示受主代理调度的 DeepSeek 任务、逐步回复、工具活动、候选文件和失败状态。",
+        "shortDescription": "实时查看 DeepSeek 与 GLM 协作",
+        "longDescription": "本地只读监看面板，展示 Harness/DeepSeek 与 ZCode/GLM 受控任务的回复、工具活动、候选文件和失败状态。",
         "developerName": "DeepSeek Codex Companion",
         "category": "Productivity",
         "capabilities": [

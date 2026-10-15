@@ -1,13 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,writeFile,mkdir,rm,access} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,mkdir,rm,rmdir,access,symlink,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join,relative,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {install,makeTaskHookCommands} from '../scripts/install.mjs';
-import {resolveRuntimePaths,resolveOpenCodePaths} from '../skills/deepseek-helper/scripts/runtime-paths.mjs';
+import {resolveRuntimePaths,resolveZCodePaths} from '../skills/deepseek-helper/scripts/runtime-paths.mjs';
 
 const sourceHookPath=fileURLToPath(new URL('../plugins/deepseek-monitor/hooks/hooks.json',import.meta.url));
+const makeZCode=async root=>{
+  await mkdir(join(root,'resources','glm'),{recursive:true});
+  await writeFile(join(root,'ZCode.exe'),'TEST FIXTURE - NEVER EXECUTED');
+  await writeFile(join(root,'resources','glm','zcode.cjs'),'TEST FIXTURE - NEVER EXECUTED');
+};
 const withoutCommands=value=>{
   if(Array.isArray(value))return value.map(withoutCommands);
   if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>!['command','commandWindows'].includes(key)).map(([key,item])=>[key,withoutCommands(item)]));
@@ -49,22 +54,22 @@ test('installer preserves both backend paths across partial updates and backs up
   const root=await mkdtemp(join(tmpdir(),'deepseek-dual-install-'));
   try{
     const codexHome=join(root,'codex'),dshHome=join(root,'Harness'),otherDshHome=join(root,'Harness new');
-    const opencodeCli=join(root,'opencode-cli.exe'),otherCli=join(root,'opencode-cli-new.exe');
+    const zcodeHome=join(root,'ZCode 用户'),otherZcodeHome=join(root,'ZCode new');
     for(const directory of [dshHome,otherDshHome]){await mkdir(directory);await writeFile(join(directory,'DeepSeek Harness.exe'),'TEST ONLY');}
-    for(const path of [opencodeCli,otherCli])await writeFile(path,'TEST ONLY');
-    const result=await install({codexHome,dshHome,opencodeCli,allowNonWindows:true});
+    for(const path of [zcodeHome,otherZcodeHome])await makeZCode(path);
+    const result=await install({codexHome,dshHome,zcodeHome,allowNonWindows:true});
     const configPath=join(result.skillTarget,'helper.config.json');
-    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:dshHome,opencodeExecutable:opencodeCli});
-    await writeFile(configPath,JSON.stringify({installation:dshHome,opencodeExecutable:opencodeCli,unknownField:'do not propagate'}));
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:dshHome,zcodeInstallation:zcodeHome});
+    await writeFile(configPath,JSON.stringify({installation:dshHome,zcodeInstallation:zcodeHome,unknownField:'do not propagate'}));
     const updateHarness=await install({codexHome,dshHome:otherDshHome,overwrite:true,allowNonWindows:true});
-    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:otherDshHome,opencodeExecutable:opencodeCli});
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:otherDshHome,zcodeInstallation:zcodeHome});
     assert.equal(JSON.parse(await readFile(join(updateHarness.backupDirectory,'deepseek-helper','helper.config.json'),'utf8')).installation,dshHome);
-    const updateOpenCode=await install({codexHome,opencodeCli:otherCli,overwrite:true,allowNonWindows:true});
-    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:otherDshHome,opencodeExecutable:otherCli});
-    assert.equal(updateOpenCode.dshHome,otherDshHome);
-    assert.equal(updateOpenCode.opencodeExecutable,otherCli);
+    const updateZCode=await install({codexHome,zcodeHome:otherZcodeHome,overwrite:true,allowNonWindows:true});
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:otherDshHome,zcodeInstallation:otherZcodeHome});
+    assert.equal(updateZCode.dshHome,otherDshHome);
+    assert.equal(updateZCode.zcodeInstallation,otherZcodeHome);
     const updateNeither=await install({codexHome,overwrite:true,allowNonWindows:true});
-    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:otherDshHome,opencodeExecutable:otherCli});
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:otherDshHome,zcodeInstallation:otherZcodeHome});
     assert.ok(updateNeither.backupDirectory);
   }finally{
     assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-dual-install-[^\\/]+$/);
@@ -72,16 +77,23 @@ test('installer preserves both backend paths across partial updates and backs up
   }
 });
 
-test('invalid or directory OpenCode executable is rejected before installation',async()=>{
-  const root=await mkdtemp(join(tmpdir(),'deepseek-opencode-invalid-'));
+test('invalid ZCode root or non-file CLI components are rejected before installation',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'deepseek-zcode-invalid-'));
   try{
     const codexHome=join(root,'codex');
-    for(const opencodeCli of ['relative.exe',join(root,'missing.exe'),root]){
-      await assert.rejects(()=>install({codexHome,opencodeCli,allowNonWindows:true}),/absolute|not found/);
+    for(const zcodeHome of ['relative',join(root,'missing'),root]){
+      await assert.rejects(()=>install({codexHome,zcodeHome,allowNonWindows:true}),/absolute|not found/);
       await assert.rejects(()=>access(codexHome));
     }
+    const zcodeHome=join(root,'ZCode');
+    await mkdir(join(zcodeHome,'ZCode.exe'),{recursive:true});
+    await assert.rejects(()=>install({codexHome,zcodeHome,allowNonWindows:true}),/ZCode\.exe.*file/);
+    await rmdir(join(zcodeHome,'ZCode.exe'));await writeFile(join(zcodeHome,'ZCode.exe'),'TEST ONLY');
+    await mkdir(join(zcodeHome,'resources','glm','zcode.cjs'),{recursive:true});
+    await assert.rejects(()=>install({codexHome,zcodeHome,allowNonWindows:true}),/zcode\.cjs.*file/);
+    await assert.rejects(()=>access(codexHome));
   }finally{
-    assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-opencode-invalid-[^\\/]+$/);
+    assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-zcode-invalid-[^\\/]+$/);
     await rm(root,{recursive:true,force:true});
   }
 });
@@ -96,7 +108,7 @@ test('empty or unknown-only saved helper paths fail update before touching insta
     await writeFile(pluginMarker,'unchanged installed marker');
     for(const config of [{},{unknownPath:'unused'}]){
       await writeFile(configPath,JSON.stringify(config));
-      await assert.rejects(()=>install({codexHome,overwrite:true,allowNonWindows:true}),/helper\.config\.json must contain an absolute installation or opencodeExecutable path/);
+      await assert.rejects(()=>install({codexHome,overwrite:true,allowNonWindows:true}),/helper\.config\.json must contain an absolute installation/);
       assert.equal(await readFile(pluginMarker,'utf8'),'unchanged installed marker');
       await assert.rejects(()=>access(join(codexHome,'backups')));
       assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),config);
@@ -107,21 +119,66 @@ test('empty or unknown-only saved helper paths fail update before touching insta
   }
 });
 
+test('ZCode migration discards unknown saved fields while preserving Harness, backup and unrelated application data',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'deepseek-zcode-migration-'));
+  try{
+    const codexHome=join(root,'codex'),dshHome=join(root,'Harness'),zcodeHome=join(root,'ZCode');
+    const oldApp=join(root,'UnrelatedApp'),oldExecutable=join(oldApp,'app.exe');
+    await mkdir(dshHome);await writeFile(join(dshHome,'DeepSeek Harness.exe'),'TEST ONLY');
+    await makeZCode(zcodeHome);await mkdir(oldApp);await writeFile(oldExecutable,'PRESERVE APPLICATION');
+    await writeFile(join(oldApp,'account-data'),'PRESERVE ACCOUNT DATA');
+    const installed=await install({codexHome,dshHome,allowNonWindows:true});
+    const configPath=join(installed.skillTarget,'helper.config.json');
+    const previous={installation:dshHome,unrelatedExecutable:oldExecutable,unknownField:'discard'};
+    await writeFile(configPath,JSON.stringify(previous));
+    const migrated=await install({codexHome,zcodeHome,overwrite:true,allowNonWindows:true});
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{installation:dshHome,zcodeInstallation:zcodeHome});
+    assert.deepEqual(JSON.parse(await readFile(join(migrated.backupDirectory,'deepseek-helper','helper.config.json'),'utf8')),previous);
+    assert.equal(await readFile(oldExecutable,'utf8'),'PRESERVE APPLICATION');
+    assert.equal(await readFile(join(oldApp,'account-data'),'utf8'),'PRESERVE ACCOUNT DATA');
+    assert.equal(Object.hasOwn(migrated,'unrelatedExecutable'),false);
+  }finally{
+    assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-zcode-migration-[^\\/]+$/);
+    await rm(root,{recursive:true,force:true});
+  }
+});
+
+test('failed ZCode migration leaves installed files and saved paths untouched',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'deepseek-zcode-failed-migration-'));
+  try{
+    const codexHome=join(root,'codex');
+    const installed=await install({codexHome,allowNonWindows:true});
+    const configPath=join(installed.skillTarget,'helper.config.json');
+    const saved=JSON.stringify({unknownExecutable:join(root,'prior-app.exe')});
+    await writeFile(configPath,saved);
+    const marker=join(installed.pluginTarget,'mcp.json');await writeFile(marker,'PRESERVE INSTALLED PLUGIN');
+    for(const options of [{zcodeHome:root},{}]){
+      await assert.rejects(()=>install({codexHome,...options,overwrite:true,allowNonWindows:true}),/not found|helper\.config\.json/);
+      assert.equal(await readFile(configPath,'utf8'),saved);
+      assert.equal(await readFile(marker,'utf8'),'PRESERVE INSTALLED PLUGIN');
+      await assert.rejects(()=>access(join(codexHome,'backups')));
+    }
+  }finally{
+    assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-zcode-failed-migration-[^\\/]+$/);
+    await rm(root,{recursive:true,force:true});
+  }
+});
+
 test('an explicit backend path repairs empty saved config and resolves after installation',async()=>{
   const root=await mkdtemp(join(tmpdir(),'deepseek-config-repair-'));
   try{
-    const codexHome=join(root,'codex'),dshHome=join(root,'Harness'),opencodeCli=join(root,'opencode-cli.exe');
+    const codexHome=join(root,'codex'),dshHome=join(root,'Harness'),zcodeHome=join(root,'ZCode');
     await mkdir(dshHome);await writeFile(join(dshHome,'DeepSeek Harness.exe'),'TEST ONLY');
-    await writeFile(opencodeCli,'TEST ONLY');
+    await makeZCode(zcodeHome);
     const installed=await install({codexHome,allowNonWindows:true});
     const configPath=join(installed.skillTarget,'helper.config.json');
     await writeFile(configPath,'{}');
     await install({codexHome,dshHome,overwrite:true,allowNonWindows:true});
     assert.equal(resolveRuntimePaths({env:{},configPath}).installation,dshHome);
     await writeFile(configPath,JSON.stringify({unknownField:'discard'}));
-    await install({codexHome,opencodeCli,overwrite:true,allowNonWindows:true});
-    assert.equal(resolveOpenCodePaths({env:{},configPath}).executable,opencodeCli);
-    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{opencodeExecutable:opencodeCli});
+    await install({codexHome,zcodeHome,overwrite:true,allowNonWindows:true});
+    assert.equal(resolveZCodePaths({env:{},configPath}).installation,zcodeHome);
+    assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')),{zcodeInstallation:zcodeHome});
   }finally{
     assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-config-repair-[^\\/]+$/);
     await rm(root,{recursive:true,force:true});
@@ -184,7 +241,7 @@ test('task hook commands quote Node paths while allowing only plugin-root expans
   assert.throws(()=>makeTaskHookCommands('relative-node'),/absolute path/);
 });
 
-test('hook update backs up prior owned files and preserves additional plugin files',async()=>{
+test('hook update backs up prior owned files and refreshes additional plugin files',async()=>{
   const root=await mkdtemp(join(tmpdir(),'deepseek-hook-update-'));
   try{
     const codexHome=join(root,'codex');
@@ -199,12 +256,58 @@ test('hook update backs up prior owned files and preserves additional plugin fil
     assert.equal(await readFile(join(backupHooks,'hooks.json'),'utf8'),priorHook);
     assert.equal(await readFile(join(backupHooks,'runtime.json'),'utf8'),priorRuntime);
     assert.equal(await readFile(join(backupHooks,'local-note.txt'),'utf8'),'keep this local note');
-    assert.equal(await readFile(join(updated.pluginTarget,'hooks','local-note.txt'),'utf8'),'keep this local note');
-    assert.equal(await readFile(join(updated.marketplaceRoot,'plugins','deepseek-monitor','hooks','local-note.txt'),'utf8'),'keep this local note');
+    await assert.rejects(()=>access(join(updated.pluginTarget,'hooks','local-note.txt')));
+    await assert.rejects(()=>access(join(updated.marketplaceRoot,'plugins','deepseek-monitor','hooks','local-note.txt')));
     assert.notEqual(await readFile(updated.hookConfigPath,'utf8'),priorHook);
     assert.deepEqual(JSON.parse(await readFile(updated.hookRuntimePath,'utf8')),{codexHome});
   }finally{
     assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-hook-update-[^\\/]+$/);
+    await rm(root,{recursive:true,force:true});
+  }
+});
+
+test('overwrite removes retired adapters from owned components and marketplace while retaining config, backup and global data',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'deepseek-refresh-install-'));
+  try{
+    const codexHome=join(root,'codex'),dshHome=join(root,'Harness'),zcodeHome=join(root,'ZCode');
+    await mkdir(dshHome);await writeFile(join(dshHome,'DeepSeek Harness.exe'),'TEST ONLY');await makeZCode(zcodeHome);
+    const installed=await install({codexHome,dshHome,zcodeHome,allowNonWindows:true});
+    const retiredSkill=join(installed.skillTarget,'scripts','retired-adapter.mjs');
+    const retiredPlugin=join(installed.pluginTarget,'server','retired-adapter.mjs');
+    const retiredMarketplace=join(installed.marketplaceRoot,'plugins','deepseek-monitor','server','retired-adapter.mjs');
+    const componentRoots=[installed.pluginTarget,installed.skillTarget,join(installed.marketplaceRoot,'plugins','deepseek-monitor')];
+    const rootIdentities=await Promise.all(componentRoots.map(async path=>{const info=await stat(path);return {ino:info.ino,dev:info.dev};}));
+    for(const path of [retiredSkill,retiredPlugin,retiredMarketplace])await writeFile(path,'RETIRED FIXTURE - NEVER EXECUTED');
+    const globalHook=join(codexHome,'hooks.json'),userData=join(codexHome,'deepseek-monitor','user-record.json');
+    await writeFile(globalHook,'PRESERVE GLOBAL HOOK');await mkdir(dirname(userData),{recursive:true});await writeFile(userData,'PRESERVE USER DATA');
+    const updated=await install({codexHome,overwrite:true,allowNonWindows:true});
+    for(const [index,path] of componentRoots.entries()){
+      const info=await stat(path);assert.equal(info.isDirectory(),true);
+      assert.deepEqual({ino:info.ino,dev:info.dev},rootIdentities[index],'The component root remains the same directory after refresh');
+    }
+    for(const path of [retiredSkill,retiredPlugin,retiredMarketplace])await assert.rejects(()=>access(path));
+    for(const path of [join(updated.backupDirectory,'deepseek-helper','scripts','retired-adapter.mjs'),join(updated.backupDirectory,'deepseek-monitor','server','retired-adapter.mjs')])assert.equal(await readFile(path,'utf8'),'RETIRED FIXTURE - NEVER EXECUTED');
+    assert.deepEqual(JSON.parse(await readFile(join(updated.skillTarget,'helper.config.json'),'utf8')),{installation:dshHome,zcodeInstallation:zcodeHome});
+    assert.equal(await readFile(globalHook,'utf8'),'PRESERVE GLOBAL HOOK');assert.equal(await readFile(userData,'utf8'),'PRESERVE USER DATA');
+    await access(join(updated.skillTarget,'scripts','delegate.mjs'));await access(join(updated.pluginTarget,'hooks','task-preflight.mjs'));
+  }finally{
+    assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-refresh-install-[^\\/]+$/);
+    await rm(root,{recursive:true,force:true});
+  }
+});
+
+test('installer refuses replacement through a redirected component parent before touching external files',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'deepseek-redirected-install-'));
+  try{
+    const codexHome=join(root,'codex'),outside=join(root,'outside');
+    await mkdir(codexHome);await mkdir(outside);await writeFile(join(outside,'preserved.txt'),'PRESERVE OUTSIDE');
+    try{await symlink(outside,join(codexHome,'plugins'),process.platform==='win32'?'junction':'dir');}
+    catch(error){if(['EPERM','EACCES','ENOSYS'].includes(error.code))return t.skip('This host does not permit directory links');throw error;}
+    await assert.rejects(()=>install({codexHome,overwrite:true,allowNonWindows:true}),/real directories/);
+    assert.equal(await readFile(join(outside,'preserved.txt'),'utf8'),'PRESERVE OUTSIDE');
+    await assert.rejects(()=>access(join(codexHome,'backups')));
+  }finally{
+    assert.match(relative(resolve(tmpdir()),resolve(root)),/^deepseek-redirected-install-[^\\/]+$/);
     await rm(root,{recursive:true,force:true});
   }
 });

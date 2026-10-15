@@ -46,25 +46,10 @@ test('protocol rejects missing, malformed or contradictory recorded guarantees',
   }
 });
 
-test('backend verification preserves legacy Harness and requires OpenCode runtime evidence and exact provider', () => {
-  assert.equal(verifyResult(valid()).mechanicalOk,true);
-  assert.equal(verifyResult({...valid(),backend:'harness'}).mechanicalOk,true);
-  const opencode={...valid(),backend:'opencode',runtimeEvidenceVerified:true,modelSelection:{provider:'deepseek',model:'deepseek-flash',reasoningEffort:'max'}};
-  assert.equal(verifyResult(opencode).mechanicalOk,true);
-  for(const backend of ['',null,undefined,'unknown',{},1]){
-    assert.ok(verifyResult({...valid(),backend}).protocol.issues.some(entry=>entry.code==='backend_unsupported'));
-  }
-  for(const value of [false,undefined,1,'true']){
-    assert.ok(verifyResult({...opencode,runtimeEvidenceVerified:value}).protocol.issues.some(entry=>entry.code==='runtime_evidence_unverified'));
-  }
-  for(const result of [
-    {...opencode,modelSelection:{...opencode.modelSelection,provider:'deepseek-official'}},
-    {...valid(),modelSelection:{...valid().modelSelection,provider:'deepseek'}},
-    {...opencode,modelSelection:{...opencode.modelSelection,model:'deepseek-chat'}},
-    {...opencode,modelSelection:{...opencode.modelSelection,reasoningEffort:'high'}},
-  ])assert.ok(verifyResult(result).protocol.issues.some(entry=>entry.code==='model_mismatch'));
-  assert.equal(verifyResult({...opencode,cleanup:{incomplete:true}}).mechanicalOk,false);
-  assert.equal(verifyResult({...opencode,policyActive:false}).mechanicalOk,false);
+test('backend verification preserves implicit Harness and rejects unsupported backends',()=>{
+ assert.equal(verifyResult(valid()).mechanicalOk,true);
+ assert.equal(verifyResult({...valid(),backend:'harness'}).mechanicalOk,true);
+ for(const backend of ['',null,undefined,'retired-backend',{},1])assert.ok(verifyResult({...valid(),backend}).protocol.issues.some(entry=>entry.code==='backend_unsupported'));
 });
 
 test('tool failures are separate from a structurally completed protocol', () => {
@@ -76,6 +61,18 @@ test('tool failures are separate from a structurally completed protocol', () => 
   assert.equal(report.tools.ok, false);
   assert.equal(report.mechanicalOk, false);
   assert.deepEqual(report.tools.errors, [{ callId: 'c1', tool: 'read_snapshot', status: 'error' }]);
+});
+
+test('ZCode requires the selected standard Z.ai provider, GLM model, Max and runtime evidence',()=>{
+ const zcode={...valid(),backend:'zcode',runtimeEvidenceVerified:true,modelSelection:{provider:'zai-standard-api',model:'GLM-5.3-Flash',reasoningEffort:'max'}};
+ assert.equal(verifyResult(zcode).mechanicalOk,true);
+ for(const change of [
+  {provider:'deepseek'},{provider:'zcode'},{provider:'account:zai-individual-coding-plan'},
+  {model:'deepseek-flash'},{model:'GLM-5.3'},{model:'glm-5.3-flash'},{reasoningEffort:'high'}
+ ])assert.ok(verifyResult({...zcode,modelSelection:{...zcode.modelSelection,...change}}).protocol.issues.some(item=>item.code==='model_mismatch'));
+ for(const runtimeEvidenceVerified of [undefined,false,'true',1])assert.equal(verifyResult({...zcode,runtimeEvidenceVerified}).mechanicalOk,false);
+ assert.equal(verifyResult({...zcode,backend:'retired-backend'}).mechanicalOk,false);
+ assert.equal(verifyResult({...zcode,backend:'harness'}).mechanicalOk,false);
 });
 
 test('unmatched, missing and duplicate tool records fail protocol', () => {

@@ -3,7 +3,11 @@ import {homedir} from 'node:os';
 import {join} from 'node:path';
 export const dataRoot=join(process.env.CODEX_HOME||join(homedir(),'.codex'),'deepseek-monitor');
 const idPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
-const safeBackend=value=>value==='opencode'?'opencode':'harness';
+const safeBackend=value=>value===undefined||value==='harness'?'harness':value==='zcode'?'zcode':null;
+function safeModel(value,backend){
+  const model=backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash';
+  return value?.model===model&&value?.reasoningEffort==='max'?{model,reasoningEffort:'max'}:null;
+}
 const validTimestamp=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&Number.isFinite(Date.parse(value));
 export async function getRun(id,root=dataRoot){
   if(!idPattern.test(id))throw new Error('Invalid run id');
@@ -20,6 +24,8 @@ export async function getRun(id,root=dataRoot){
   r.updatedAt=validUpdate?new Date(r.updatedAt).toISOString():(r.done?r.startedAt:null);
   // Legacy records came from Harness; do not expose arbitrary backend metadata.
   r.backend=safeBackend(r.backend);
+  if(r.backend===null)throw new Error('Unsupported run backend');
+  r.model=safeModel(r.model,r.backend);
   if(Object.hasOwn(r,'error')&&typeof r.error!=='string')r.error=null;
   if(Object.hasOwn(r,'errorDetails'))r.errorDetails=safeErrorDetails(r.errorDetails);
   if(Object.hasOwn(r,'errorEvidence'))r.errorEvidence=safeErrorEvidence(r.errorEvidence);
@@ -64,8 +70,10 @@ function safeDiagnosticRecovery(value){
   return {status:value.status,checkedMessages:value.checkedMessages};
 }
 export function summary(r){
-  const {id,title,status,mode,taskType,startedAt,updatedAt,elapsedMs,model,policyActive,modelSelectionVerified}=r;
-  const result={id,title,backend:safeBackend(r.backend),status,mode,taskType,startedAt,updatedAt,elapsedMs,model,policyActive,modelSelectionVerified};
+  const {id,title,status,mode,taskType,startedAt,updatedAt,elapsedMs,policyActive,modelSelectionVerified}=r;
+  const backend=safeBackend(r.backend);
+  if(backend===null)return null;
+  const result={id,title,backend,status,mode,taskType,startedAt,updatedAt,elapsedMs,model:safeModel(r.model,backend),policyActive,modelSelectionVerified};
   const timing=safeTiming(r.timing),timeout=safeTimeout(r.timeout);
   if(timing!==undefined)result.timing=timing;
   if(timeout!==undefined)result.timeout=timeout;

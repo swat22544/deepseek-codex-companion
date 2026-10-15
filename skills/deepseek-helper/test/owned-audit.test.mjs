@@ -4,10 +4,10 @@ import {mkdtemp,writeFile,appendFile,rm} from 'node:fs/promises';
 import {appendFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {createAuditReader} from '../scripts/opencode-runner.mjs';
+import {createAuditReader} from '../scripts/owned-process.mjs';
 
 async function fixture(t){
- const directory=await mkdtemp(join(tmpdir(),'opencode-audit-'));
+ const directory=await mkdtemp(join(tmpdir(),'backend-audit-'));
  t.after(()=>rm(directory,{recursive:true,force:true}));
  return join(directory,'audit.jsonl');
 }
@@ -52,8 +52,8 @@ test('finish rejects truncated UTF-8 and polling rejects malformed UTF-8',async 
 test('audit parse errors omit raw data and remain fatal after another poll',async t=>{
  const path=await fixture(t);await writeFile(path,'{"PRIVATE_SENTINEL":wrong}\n');
  const reader=createAuditReader(path,()=>assert.fail('Malformed record must not be accepted'));
- await assert.rejects(reader(),error=>/Malformed OpenCode audit record/.test(error.message)&&!error.message.includes('PRIVATE_SENTINEL'));
- await assert.rejects(reader.finish(),/Malformed OpenCode audit record/);
+ await assert.rejects(reader(),error=>/Malformed Backend audit record/.test(error.message)&&!error.message.includes('PRIVATE_SENTINEL'));
+ await assert.rejects(reader.finish(),/Malformed Backend audit record/);
 });
 
 test('complete final record is accepted exactly once and a missing unused audit is allowed',async t=>{

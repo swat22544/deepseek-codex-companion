@@ -1,9 +1,14 @@
 {
-  "name":"deepseek-codex-companion",
-  "version": "1.2.0",
-  "private":true,
-  "description":"Supervised DeepSeek collaboration and a live monitor for Codex on Windows.",
-  "type":"module",
-  "engines":{"node":">=20"},
-  "scripts":{"test":"node scripts/test.mjs","setup":"node scripts/install.mjs"}
+  "name": "deepseek-codex-companion",
+  "version": "1.3.0",
+  "private": true,
+  "description": "Supervised DeepSeek collaboration and a live monitor for Codex on Windows.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node scripts/test.mjs",
+    "setup": "node scripts/install.mjs"
+  }
 }

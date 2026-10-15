@@ -18,7 +18,7 @@ const detail={type:'provider.invalid-request',httpStatus:400,source:'session',re
 const recovery={status:'recovered',checkedMessages:3};
 
 test('monitor persists only safe error and diagnostic fields, never exception objects',async t=>{
- const root=await fixture(t),monitor=await createMonitor({backend:'opencode',instruction:'Diagnostic projection'},{directory:join(root,'runs')});
+ const root=await fixture(t),monitor=await createMonitor({backend:'zcode',instruction:'Diagnostic projection'},{directory:join(root,'runs')});
  const result=await monitor.finish({ok:false,error:{...extra},errorDetails:{...detail,...extra},diagnosticRecovery:{...recovery,...extra}});
  assert.equal(result.available,true);
  const raw=await readFile(monitor.path,'utf8'),record=JSON.parse(raw);
@@ -59,7 +59,7 @@ test('diagnostic recovery requires a known status and an actual nonnegative safe
 });
 
 test('writer and summaries keep at most three independently projected error evidence records',async t=>{
- const root=await fixture(t),monitor=await createMonitor({backend:'opencode',instruction:'Independent evidence'},{directory:join(root,'runs')});
+ const root=await fixture(t),monitor=await createMonitor({backend:'zcode',instruction:'Independent evidence'},{directory:join(root,'runs')});
  const cli={type:'provider.transport',httpStatus:null,source:'cli',reason:'connection_reset'};
  const http={type:'unknown',httpStatus:502,source:'http',reason:null};
  const evidence=[{source:'PRIVATE',...extra},null,{...cli,...extra},{...http,...extra},{...detail,...extra},{type:'provider.auth',source:'http',httpStatus:401}];
@@ -76,7 +76,7 @@ test('writer and summaries keep at most three independently projected error evid
 
 test('legacy records retain generic errors and do not invent diagnostic fields',async t=>{
  const root=await fixture(t),id=randomUUID();await mkdir(join(root,'runs'));
- const record={id,version:1,done:true,status:'failed',startedAt:new Date().toISOString(),error:'OpenCode reported a runtime/provider error.'};
+ const record={id,version:1,done:true,status:'failed',startedAt:new Date().toISOString(),error:'Backend reported a runtime/provider error.'};
  await writeFile(join(root,'runs',id+'.json'),JSON.stringify(record));
  const loaded=await getRun(id,root),listed=(await listRuns(root))[0];
  assert.equal(loaded.error,record.error);

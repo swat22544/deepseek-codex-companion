@@ -63,24 +63,32 @@ test('connection labels refer to monitoring, not model progress',()=>{
 });
 
 test('backend detail uses explicit fixed labels and legacy Harness fallback',()=>{
- for(const backend of [undefined,'harness','opencode','PRIVATE <script>',{credential:'PRIVATE'},['opencode']]){
-  const p=render({...base(),backend,model:{model:'deepseek-flash',reasoningEffort:'max'}});
-  assert.equal(p.node('task-backend').textContent,backend==='opencode'?'OpenCode':'Harness');
-  assert.equal(p.node('task-model').textContent,'DeepSeek-V41-Flash · Max');
+ for(const backend of [undefined,'harness','zcode']){
+  const p=render({...base(),backend,model:{model:backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash',reasoningEffort:'max'}});
+  assert.equal(p.node('task-backend').textContent,backend==='zcode'?'ZCode':'Harness');
+  assert.equal(p.node('task-model').textContent,backend==='zcode'?'GLM-5.3-Flash · Max':'DeepSeek-V41-Flash · Max');
+ }
+});
+
+test('model detail never displays arbitrary or cross-backend model and effort strings',()=>{
+ for(const backend of ['harness','zcode'])for(const model of [undefined,{}, {model:'PRIVATE_MODEL',reasoningEffort:'PRIVATE_EFFORT'},{model:backend==='zcode'?'deepseek-flash':'GLM-5.3-Flash',reasoningEffort:'max'},{model:backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash',reasoningEffort:'high'}]){
+  const p=render({...base(),backend,model});
+  assert.equal(p.node('task-model').textContent,'等待模型信息 · —');
+  assert.equal(p.node('verification').textContent,'等待调用核验');
  }
 });
 
 test('backend list source distinguishes same-title tasks and can be searched',()=>{
  const p=panel();
- p.state.runs=[{...base(),id:'h'}, {...base(),id:'o',backend:'opencode'}];
+ p.state.runs=[{...base(),id:'h'}, {...base(),id:'z',backend:'zcode'}, {...base(),id:'invalid',backend:'retired-backend'}];
  p.renderList();
  const buttons=()=>p.node('run-list').children[0].children.map(item=>item.children[0]);
  assert.equal(buttons().length,2);
- assert.match(buttons()[0].title,/Harness/);assert.match(buttons()[1].title,/OpenCode/);
+ assert.match(buttons()[0].title,/Harness/);assert.match(buttons()[1].title,/ZCode/);
  assert.equal(buttons()[0].children[1].children[1].children[0].textContent,'Harness · 进行中');
- assert.equal(buttons()[1].children[1].children[1].children[0].textContent,'OpenCode · 进行中');
- p.state.query='opencode';p.renderList();
- assert.equal(buttons().length,1);assert.equal(buttons()[0].dataset.runId,'o');
+ assert.equal(buttons()[1].children[1].children[1].children[0].textContent,'ZCode · 进行中');
+ p.state.query='zcode';p.renderList();
+ assert.equal(buttons().length,1);assert.equal(buttons()[0].dataset.runId,'z');
  p.state.query='';p.state.runs[1].backend='harness';p.renderList();
  assert.match(buttons()[1].title,/Harness/);
 });
@@ -122,7 +130,7 @@ test('HTTP codes and recovery labels display validated values without inventing 
 });
 
 test('legacy generic failures remain readable and completed/interrupted states are preserved',()=>{
- const message='OpenCode reported a runtime/provider error.';
+ const message='Backend reported a runtime/provider error.';
  const legacy=render({...base(),status:'failed',error:message});
  assert.equal(legacy.node('run-error').textContent,message);
  const completed=render({...base(),status:'completed',diagnosticRecovery:{status:'not_needed',checkedMessages:0}});

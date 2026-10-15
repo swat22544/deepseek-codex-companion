@@ -1,5 +1,5 @@
 {
-  "description": "Load the installed deepseek-helper rules before each user task; Codex decides whether to delegate.",
+  "description": "Load the installed deepseek-helper rules for Harness and ZCode before each user task; Codex decides whether to delegate. The hook does not call external models.",
   "hooks": {
     "UserPromptSubmit": [
       {

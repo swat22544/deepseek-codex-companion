@@ -7,7 +7,7 @@ import { hasDuplicateJsonItems } from './canonical-json.mjs';
 // This module only checks saved evidence. It never loads the runner or monitor,
 // invokes a model, reads candidate files, applies edits, or executes candidates.
 const MODEL = Object.freeze({ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' });
-const OPENCODE_MODEL = Object.freeze({ ...MODEL, provider: 'deepseek' });
+const ZCODE_MODEL = Object.freeze({ provider: 'zai-standard-api', model: 'GLM-5.3-Flash', reasoningEffort: 'max' });
 const TYPES = new Set(['array', 'object', 'string', 'number', 'integer', 'boolean', 'null']);
 const CONTRACT_KEYS = new Set(['format', 'type', 'requiredKeys', 'allowedKeys', 'uniqueItems', 'expected']);
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -84,13 +84,13 @@ export function verifyResult(input, contract) {
   if (!record(result)) add('result_shape', '$', 'Result must be a JSON object, or an evaluation envelope containing a result object.');
   else {
     const backend=owns(result,'backend')?result.backend:'harness';
-    if(!['harness','opencode'].includes(backend))add('backend_unsupported','backend','Backend must be harness or opencode; omitted legacy results use harness.');
-    const expectedModel=backend==='opencode'?OPENCODE_MODEL:MODEL;
-    if(backend==='opencode'&&result.runtimeEvidenceVerified!==true)add('runtime_evidence_unverified','runtimeEvidenceVerified','OpenCode model and permission evidence must explicitly be verified at runtime.');
+    if(!['harness','zcode'].includes(backend))add('backend_unsupported','backend','Backend must be harness or zcode; omitted legacy results use harness.');
+    const expectedModel=backend==='zcode'?ZCODE_MODEL:MODEL;
+    if(backend==='zcode'&&result.runtimeEvidenceVerified!==true)add('runtime_evidence_unverified','runtimeEvidenceVerified','Backend model and permission evidence must explicitly be verified at runtime.');
     if (result.ok !== true) add('runner_not_ok', 'ok', 'Runner must explicitly report ok: true.');
     if (result.policyActive !== true) add('guard_unverified', 'policyActive', 'Supervisor guard activation is not confirmed.');
     if (result.modelSelectionVerified !== true) add('model_unverified', 'modelSelectionVerified', 'Live model selection is not recorded as verified.');
-    if (!record(result.modelSelection) || Object.entries(expectedModel).some(([key, value]) => result.modelSelection[key] !== value)) add('model_mismatch', 'modelSelection', `Expected ${expectedModel.provider} / deepseek-flash / max.`);
+    if (!record(result.modelSelection) || Object.entries(expectedModel).some(([key, value]) => result.modelSelection[key] !== value)) add('model_mismatch', 'modelSelection', `Expected ${expectedModel.provider} / ${expectedModel.model} / ${expectedModel.reasoningEffort}.`);
     if (!Number.isInteger(result.modelRequests) || result.modelRequests < 1) add('model_requests', 'modelRequests', 'At least one verified model request is required.');
     if (result.exitCode !== 0) add('exit_code', 'exitCode', 'Runner exit code must be numeric zero.');
     if (result.stopReason?.kind !== 'completed') add('not_completed', 'stopReason.kind', 'The delegated turn must have completed.');

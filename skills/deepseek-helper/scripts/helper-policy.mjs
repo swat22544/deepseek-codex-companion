@@ -12,7 +12,7 @@ export const hash = value => createHash('sha256').update(value).digest('hex');
 export function validateRequest(request) {
   if (!request || !TASKS.has(request.taskType)) throw new Error('Unsupported taskType. See references/request.md.');
   const backend = request.backend === undefined ? 'harness' : request.backend;
-  if (!['harness', 'opencode'].includes(backend)) throw new Error('backend must be harness or opencode.');
+  if (!['harness', 'zcode'].includes(backend)) throw new Error('backend must be harness or zcode.');
   if (typeof request.instruction !== 'string' || !request.instruction.trim() || typeof request.input !== 'string') throw new Error('instruction and input must be strings; instruction must not be empty.');
   const mode = request.mode ?? 'text';
   if (!MODES.has(mode)) throw new Error('mode must be text, inspect, or propose.');

@@ -1,28 +1,17 @@
-# OpenCode 错误诊断
+# 辅助代理错误诊断
 
-适用于 Companion 1.1.1 及之后的新调用。旧记录缺少原始证据时不能通过升级恢复具体原因。这里的诊断用于判断下一步，不替代调用、交付和采用三个层次的验收。
+当前请求使用 Harness 或 ZCode。记录缺少原始证据时不能通过升级恢复具体原因。这里的诊断用于判断下一步，不替代调用、交付和采用三个层次的验收。
 
 ## 阅读顺序
 
 1. 先检查 `timeout` 与 `timing`。`timeout.kind=total/idle` 才是 helper 的总时限或无进展超时；上游报告的 `provider.timeout` 属于另一层，不能混用。
-2. 检查 `errorDetails`：`type` 是 OpenCode 的白名单错误类型，未知值为 `unknown`；`httpStatus` 是实际记录的 HTTP 整数状态，缺失时为 `null`；`source` 标明 `cli`、`http` 或 `session`；`reason` 是固定原因分类，不是原始错误消息。
-3. 查看 `diagnosticRecovery`。补充诊断只读取本次已有会话，使用独立短时限，不重跑模型，不延长模型工作预算，不让一条失败变成成功。没有会话证据、查询失败或查询超时均不能替代原始错误原因。
+2. 如有 `errorDetails`，检查 `type`、`httpStatus`、`source` 与 `reason`。类型和原因使用白名单，未知类型为 `unknown`；HTTP 状态只保留实际观察到的整数，缺失时为 `null`。来源区分 CLI、HTTP 或会话证据，字段不是原始错误消息。
+3. 对 ZCode，核对本次 app-server 的安全错误证据及模型配置。它不执行额外会话补查，不为补充错误信息重跑模型，也不延长模型工作预算。缺少字段或详情时如实说明。
 4. 再检查工具结果、已生成候选和 `cleanup`。诊断清楚不代表交付完整，清理未完成时先处理残留进程。
 
-`errorEvidence` 最多保留三条独立证据。主诊断没有 HTTP 状态、但本次末次请求观察到 HTTP 错误时，可从单独的 `source=http` 项读取状态；不要将它补进 CLI 原记录。白名单类型包括 `provider.auth`、`provider.rate-limit`、`provider.quota`、`provider.transport`、`provider.timeout`、`provider.invalid-output` 等，以及工具、权限或取消类别。
+如有 `errorEvidence`，最多保留三条独立证据。主诊断没有 HTTP 状态、但另有本次请求的 HTTP 错误证据时，可读取该独立项；不要将它补进另一条 CLI 或会话记录。白名单类型包括 `provider.auth`、`provider.rate-limit`、`provider.quota`、`provider.transport`、`provider.timeout`、`provider.invalid-output` 等，以及工具、权限或取消类别。
 
-| 补充查询状态 | 含义 |
-| --- | --- |
-| `not_needed` | 调用成功，或直接捕获的诊断已有可用信息 |
-| `skipped` | 不满足安全查询条件，例如没有可信会话、审计失败或进程清理未确认 |
-| `recovered` | 从本次会话恢复到可用的错误分类 |
-| `unavailable` | 查询完成，但最新会话记录没有可归因的错误 |
-| `failed` | 补充查询或身份、结构核验失败；它不是原始模型错误 |
-| `timed_out` | 补充查询达到自己的诊断时限；它不是任务总时限或无进展超时 |
-
-查询共享 5 秒预算，先核对会话的模型、代理和隔离目录，再最多读取三页、每页 20 条消息。只核对最新相关结果，不能将旧重试错误归因给后续请求。诊断发生在执行结束后；任务计时已经冻结，查询进程终止清理可能另需最多约 7 秒。
-
-`errorDetails` 中各字段必须来自同一条证据，不把早期 HTTP 响应与后期 CLI 错误拼接。HTTP 状态说明响应结果，错误类型说明 OpenCode 的分类；两者都不必然解释最终根因。举例：有记录的 HTTP 429 支持“服务拒绝了这次请求”，但不能仅据此判断具体账号额度或限制配置。
+`errorDetails` 中各字段必须来自同一条证据，不把早期 HTTP 响应与后期 CLI 错误拼接。HTTP 状态说明响应结果，错误类型提供有限分类；两者都不必然解释最终根因。有记录的 HTTP 429 支持“服务拒绝了这次请求”，但不能仅据此判断具体账号额度或限制配置。
 
 ## 安全边界
 
