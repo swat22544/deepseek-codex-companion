@@ -11,16 +11,17 @@
 </p>
 
 <p>
-<a href="package.json"><img src="https://img.shields.io/github/package-json/v/swat22544/deepseek-codex-companion?style=flat-square&amp;label=version&amp;color=858BFF&amp;labelColor=171C2B" alt="当前版本 1.3.0" /></a>
+<a href="package.json"><img src="https://img.shields.io/github/package-json/v/swat22544/deepseek-codex-companion?style=flat-square&amp;label=version&amp;color=858BFF&amp;labelColor=171C2B" alt="当前版本 1.4.0" /></a>
 <a href="#环境要求"><img src="https://img.shields.io/badge/platform-Windows-687BBD?style=flat-square&amp;labelColor=171C2B" alt="Windows 本地集成" /></a>
 <a href="#harness-与-zcode-的双路分工"><img src="https://img.shields.io/badge/DeepSeek-Flash%20%2F%20Max-8D79BB?style=flat-square&amp;labelColor=171C2B" alt="DeepSeek Flash / Max" /></a>
+<a href="#harness-与-zcode-的双路分工"><img src="https://img.shields.io/badge/GLM-5.3%20Flash%20%2F%20Max-128577?style=flat-square&amp;labelColor=171C2B" alt="GLM 5.3 Flash / Max" /></a>
 </p>
 
 <p>
 <a href="#安装"><strong>快速开始</strong></a> &nbsp;·&nbsp;
 <a href="#每次任务先加载协作规则">自动协作 Hook</a> &nbsp;·&nbsp;
 <a href="#协作方式">协作方式</a> &nbsp;·&nbsp;
-<a href="docs/zcode-migration-validation-2026-10-15.md">验证记录</a> &nbsp;·&nbsp;
+<a href="docs/dual-dispatch-validation-2026-10-18.md">验证记录</a> &nbsp;·&nbsp;
 <a href="docs/deepseek-capability-evaluation-2026-10-13.md">能力评估</a>
 </p>
 
@@ -35,7 +36,7 @@
 <tr>
 <td align="center" valign="top" width="32%">
 <strong>01 · 双路协作</strong><br />
-<sub>Harness 与 ZCode 各司其职，<br />独立工作包可并行推进。</sub>
+<sub>Harness 与 ZCode 各司其职，<br />独立工作包默认并行推进。</sub>
 </td>
 <td align="center" valign="top" width="32%">
 <strong>02 · 实时监看</strong><br />
@@ -49,13 +50,13 @@
 </table>
 </div>
 
-<p align="center"><sub>Windows · Node.js ≥ 20 · 版本 1.3.0</sub></p>
+<p align="center"><sub>Windows · Node.js ≥ 20 · 版本 1.4.0</sub></p>
 
 ## 项目概览
 
 `deepseek-helper` Skill 负责受控委派，`deepseek-monitor` 插件负责展示公开回复、工具活动与状态。Codex 决定任务和范围，Harness 中的 DeepSeek 与 ZCode 中的 GLM 提供候选稿，Codex 独立复核后再执行和采纳。
 
-当前版本 **1.3.0**，Skill 修订 **`2026-10-15-zcode-glm`**。技能名称、插件身份与安装路径保持稳定，便于现有任务 Hook 自动读取新版规则。当前仅提供 Harness 和 ZCode 两个后端。
+当前版本 **1.4.0**，Skill 修订 **`2026-10-18-dual-dispatch`**。技能名称、插件身份与安装路径保持稳定，便于现有任务 Hook 自动读取新版规则。当前仅提供 Harness 和 ZCode 两个后端。
 
 这是 Windows 本地外部代理集成，不是 Codex 原生子代理线程。它不附带模型、账号、密钥或第三方应用程序。
 
@@ -65,12 +66,24 @@
 
 | 后端 | 模型与思考强度 | 调用入口 |
 | --- | --- | --- |
-| `harness`（默认） | DeepSeek-V41-Flash / Max；`deepseek-official / deepseek-flash / max` | DeepSeek Harness 后台 CLI |
+| `harness` | DeepSeek-V41-Flash / Max；`deepseek-official / deepseek-flash / max` | DeepSeek Harness 后台 CLI |
 | `zcode` | Z.ai API / GLM-5.3-Flash / 最高；`zai-standard-api / GLM-5.3-Flash / max` | ZCode 自带 CLI 的 `app-server --stdio` |
 
 ZCode 固定使用标准 Z.ai API：`https://api.z.ai/api/paas/v4`，协议为 Chat Completions。会话模型、思考等级及实际请求分别核验，不根据桌面下拉框推断已经生效，不自动改用 Coding Plan、其他提供方或模型。
 
-两个材料充分、接口明确、没有相互依赖的工作包可以分别委派给两路。每路通常同时一个任务，分别保存请求、会话、预算、候选和结果。同一实现不重复派发。主代理同时推进独立工作，收到候选后核验，再按需提供反馈继续迭代。
+两个材料充分、接口明确、没有相互依赖的工作包默认分别委派给两路，通过 `delegate-batch.mjs` 一次启动。每路通常同时一个任务，分别保存请求、会话、预算、候选和结果。同一实现不重复派发。主代理同时推进独立工作，收到候选后核验，再按需提供反馈继续迭代。
+
+只有一个包时也会显式选路：续作优先原后端；一路忙碌时优先可用的空闲一路；没有其他差异时，实现/测试起草优先 GLM，分析/审查优先 DeepSeek。这是起始分配规则，不是能力排名。旧单请求省略 `backend` 仍兼容 Harness，新批次必须明确指定两路。
+
+可直接使用 [双路批次示例](examples/parallel-batch.json)：
+
+```powershell
+node skills/deepseek-helper/scripts/delegate-batch.mjs examples/parallel-batch.json work/parallel-results-001
+```
+
+父目录 `work/` 须已存在，结果目录须为新目录。两路均在等待结果前启动；每路完成即保存独立 JSON，最后汇总为 `batch-result.json`。一路失败不会重试或自动换后端，也不会丢弃另一路结果。`ok` 仍只表示调用证据机械通过，候选需要独立复核。详细请求字段见 [请求协议](skills/deepseek-helper/references/request.md)。
+
+如果个人 `AGENTS.md` 仍写着“默认 Harness”，应将该条改为与新版技能一致的显式选路和独立包默认双路并行规则；安装器不会擅自修改个人指令。
 
 | 模式 | 权限 | 用途 |
 | --- | --- | --- |
@@ -151,15 +164,19 @@ node scripts/register-task-hooks.mjs --codex-home "<实际 CODEX_HOME>"
 node "<CODEX_HOME>/skills/deepseek-helper/scripts/delegate.mjs" "<绝对路径>/work/request.json" "<绝对路径>/work/result.json"
 ```
 
-省略 `backend` 使用 Harness。完整字段与工具约束见[请求协议](skills/deepseek-helper/references/request.md)。每次使用独立请求和结果文件；材料只提供本次需要的部分，文件名过滤无法识别所有秘密。
+新请求显式填写 `backend`；仅旧单请求省略时兼容 Harness。完整字段与工具约束见[请求协议](skills/deepseek-helper/references/request.md)。每次使用独立请求和结果文件；材料只提供本次需要的部分，文件名过滤无法识别所有秘密。
 
-首次委派前，Skill 会打开 DeepSeek Monitor。插件保留原名称，但面板分别标识 Harness/DeepSeek 与 ZCode/GLM。没有加载监看工具时可运行：
+首次委派前，Skill 会打开 DeepSeek + GLM Monitor。插件ID仍为 `deepseek-monitor`，面板分别标识 Harness/DeepSeek 与 ZCode/GLM，双模型卡可筛选来源，支持状态和搜索组合。没有加载监看工具时可运行：
 
 ```powershell
 node "<CODEX_HOME>/plugins/deepseek-monitor/server/launch.mjs"
 ```
 
 服务仅监听 `127.0.0.1`，用输出的 `url` 打开 Codex 浏览器面板。链接包含本机访问令牌，不应分享。监看只显示公开回复、过滤后的活动与候选元数据，不展示隐藏推理或工具参数。监看中断不证明模型失败，应以结果文件与进程状态核对，不能因监看故障重复请求模型。
+
+![DeepSeek 与 GLM 协作面板，使用明确标注的预览样例](docs/monitor-dual-preview.png)
+
+双模型总览、来源与状态筛选、公开回复、活动和候选文件。截图使用预览样例，真实调用证据见下方验证记录。
 
 ## 时间预算与验收
 
@@ -185,7 +202,9 @@ node scripts/test.mjs
 
 测试入口只枚举正式测试目录，避免执行 `work/` 中的候选文件。离线故障注入、Hook 触发、真实模型调用和候选语义验证分别报告，不用其中一项代替另一项。
 
-2026-10-15 的 1.3.0 本地验收：**215/215 离线测试通过**；原生 Codex 两轮 Hook 全文注入通过；一次真实 ZCode / GLM-5.3-Flash / max 候选交付完成，候选通过 **54/54 独立边界用例**。这组结果是接入验收，不是模型的一般可靠率。
+2026-10-18 的 1.4.0 本地验收：**227/227 离线测试通过**；新版批次入口的 Harness 与 ZCode 真实任务相隔约1毫秒启动、分别完成并通过机械核验；运行中取消测试确认两路进程树清理完成。交付语义另行核验：审查结论已复现；测试候选的一个异常输入边界不符合契约，未原样采用。浏览器检查覆盖双路筛选、空结果、键盘页签、深浅主题和320–1280像素布局，未做真实手机验收。[双路调度与面板验证记录](docs/dual-dispatch-validation-2026-10-18.md)
+
+此前2026-10-15的1.3.0接入验收为 **215/215 离线测试通过**、原生 Codex 两轮 Hook 全文注入通过，以及一次真实 ZCode 候选交付通过 **54/54 独立边界用例**。这些均为限定范围的验收，不是模型的一般可靠率。
 
 [DeepSeek 受控辅助能力评估](docs/deepseek-capability-evaluation-2026-10-13.md) 只覆盖当时的 Harness 与 DeepSeek 组合，不能推定 GLM 的可靠性。一次调用成功不等于全面能力评估，也没有据此宣称节省额度或提速比例。ZCode 迁移及本地安装验收见[本次验证记录](docs/zcode-migration-validation-2026-10-15.md)。
 

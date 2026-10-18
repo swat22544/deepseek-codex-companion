@@ -20,7 +20,7 @@ function panel({bridge = false, ignoreAbort = false} = {}) {
     if (!listeners.has(name)) listeners.set(name, []);
     listeners.get(name).push(callback);
   };
-  const make = () => ({textContent: '', hidden: false, dataset: {}, title: '', children: [], classList: {toggle() {}}, setAttribute() {}, addEventListener() {}, append(...items) {this.children.push(...items);}, replaceChildren(...items) {this.children = items;}, querySelectorAll() {return [];}, focus() {}});
+  const make = () => ({textContent: '', hidden: false, dataset: {}, title: '', children: [], attributes: {}, listeners: new Map(), classList: {toggle() {}}, setAttribute(key,value) {this.attributes[key]=value;}, addEventListener(name,callback) {listen(this.listeners,name,callback);}, emit(name,event={}) {for(const callback of this.listeners.get(name)||[])callback(event);}, append(...items) {this.children.push(...items);}, replaceChildren(...items) {this.children = items;}, querySelectorAll() {return [];}, focus() {}});
   const node = (id) => {if (!nodes.has(id)) nodes.set(id, make()); return nodes.get(id);};
   const parent = {postMessage(message) {messages.push(message);}};
   const document = {hidden: false, getElementById: node, querySelector: node, createElement: make, createElementNS: make, createDocumentFragment: make, addEventListener(name, callback) {listen(documentListeners, name, callback);}};
@@ -55,6 +55,41 @@ function panel({bridge = false, ignoreAbort = false} = {}) {
   };
 }
 const listResult = (runs = []) => ({structuredContent: {runs}});
+
+test('backend cards, status and search filters retain only visible selections across polling', async () => {
+  const p=panel();
+  const runs=[
+    {id:'h',title:'历史读取优化',backend:'harness',status:'running'},
+    {id:'z',title:'样式设计',backend:'zcode',status:'running'},
+    {id:'f',title:'失败回归',backend:'zcode',status:'failed'},
+    {id:'old',title:'旧任务',status:'completed'}
+  ];
+  p.requests[0].resolve({runs}); await flush();
+  p.requests[1].resolve({run:runs[0]}); await flush();
+  assert.equal(p.node('parallel-summary').textContent,'两路均有任务进行中');
+  assert.equal(p.node('active-zcode').textContent,'1 进行中');
+  assert.equal(p.node('total-harness').textContent,'2 条记录');
+  p.node('card-zcode').emit('click');
+  p.requests[2].resolve({runs}); await flush();
+  assert.equal(p.requests[3].url,'/api/runs/z');
+  p.requests[3].resolve({run:runs[1]}); await flush();
+  assert.equal(p.node('task-title').textContent,'样式设计');
+  assert.equal(p.node('run-count').textContent,'2 / 4');
+  assert.equal(p.node('filter-zcode').attributes['aria-pressed'],'true');
+  p.node('status-filter').emit('change',{target:{value:'attention'}});
+  p.requests[4].resolve({runs}); await flush();
+  assert.equal(p.requests[5].url,'/api/runs/f');
+  p.requests[5].resolve({run:runs[2]}); await flush();
+  assert.equal(p.node('run-count').textContent,'1 / 4');
+  p.node('search').emit('input',{target:{value:'不存在'}});
+  p.requests[6].resolve({runs}); await flush();
+  assert.equal(p.node('empty-title').textContent,'没有匹配的任务');
+  assert.equal(p.node('detail').hidden,true);
+  assert.equal(p.requests.length,7,'no detail read for an empty filter');
+  p.poll(); p.requests[7].resolve({runs}); await flush();
+  assert.equal(p.requests.length,8,'polling must not restore a filtered-out selection');
+  p.event('pagehide',{persisted:false});
+});
 
 test('HTTP BFCache suspension aborts polling and restores timers across repeated visits', async () => {
   const p = panel();

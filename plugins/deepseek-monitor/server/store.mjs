@@ -83,8 +83,49 @@ export function summary(r){
   if(r.observationStale===true)result.observationStale=true;
   return result;
 }
+// History can be arbitrarily large and filenames/mtimes do not reflect
+// startedAt, so every candidate is read, but at most listConcurrency reads run
+// at once and only the best listLimit summaries are retained for sorting.
+const listLimit=100,listConcurrency=8;
+function compareRunEntries(a,b){
+  const byStartedAt=b.record.startedAt.localeCompare(a.record.startedAt);
+  return byStartedAt!==0?byStartedAt:a.index-b.index;
+}
+function retainNewest(retained,entry,limit){
+  if(retained.length===limit){
+    if(compareRunEntries(entry,retained[retained.length-1])>=0)return;
+    retained.pop();
+  }
+  let low=0,high=retained.length;
+  while(low<high){
+    const middle=(low+high)>>1;
+    if(compareRunEntries(entry,retained[middle])<0)high=middle;
+    else low=middle+1;
+  }
+  retained.splice(low,0,entry);
+}
+async function forEachRunLimited(names,limit,visit){
+  let next=0;
+  const worker=async()=>{
+    for(;;){
+      const index=next++;
+      if(index>=names.length)return;
+      await visit(names[index],index);
+    }
+  };
+  const workers=[];
+  for(let count=Math.min(limit,names.length);count>0;count--)workers.push(worker());
+  await Promise.all(workers);
+}
 export async function listRuns(root=dataRoot){
   let names;try{names=await readdir(join(root,'runs'));}catch(e){if(e.code==='ENOENT')return [];throw e;}
-  const records=await Promise.all(names.filter(n=>idPattern.test(n.slice(0,-5))&&n.endsWith('.json')).map(async n=>{try{return summary(await getRun(n.slice(0,-5),root));}catch{return null;}}));
-  return records.filter(Boolean).sort((a,b)=>b.startedAt.localeCompare(a.startedAt)).slice(0,100);
+  const retained=[];
+  await forEachRunLimited(names,listConcurrency,async(name,index)=>{
+    const id=name.slice(0,-5);
+    if(!idPattern.test(id)||!name.endsWith('.json'))return;
+    let record;
+    try{record=summary(await getRun(id,root));}catch{return;}
+    if(record)retainNewest(retained,{record,index},listLimit);
+  });
+  return retained.map(entry=>entry.record);
 }

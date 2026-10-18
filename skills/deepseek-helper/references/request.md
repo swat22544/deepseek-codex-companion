@@ -1,6 +1,6 @@
 # 请求与输出
 
-两种后端、所有模式共用 `scripts/delegate.mjs` 入口；旧 `extract/classify/format/draft` 请求继续可用，未指定模式时为 `text`，未指定 `backend` 时为 `harness`。
+两种后端、所有模式共用 `scripts/delegate.mjs` 入口；旧 `extract/classify/format/draft` 请求继续可用，未指定模式时为 `text`。新请求必须按技能路由规则显式选择 `backend`；旧单请求未指定时仍为 `harness`，这是兼容行为，不能作为新任务选路策略。
 
 ```json
 {
@@ -53,7 +53,28 @@ ZCode 通过本机 CLI 的后台 `app-server` 建立独立受控会话，不依�
 
 ## 并行与反馈
 
-一个请求只包含一个后端与一个工作包。两个没有未满足依赖的工作包可分别写成 Harness 和 ZCode 请求，使用不同结果文件，并行启动两次 `delegate.mjs`。主代理通常各启一路，分别跟踪退出、结果和候选；不要同时写同一个请求/结果文件，也不要将同一实现重复派发。模型回复不会自动流入另一条会话。
+一个请求只包含一个后端与一个工作包。两个没有未满足依赖的工作包默认使用 `delegate-batch.mjs`，一次启动 Harness 与 ZCode，各启一路。也可同时启动两次 `delegate.mjs`，但应先启动两条再等待，不要在两次启动之间等待第一条完成。分别跟踪退出、结果和候选；不要同时写同一个请求/结果文件，也不要将同一实现重复派发。模型回复不会自动流入另一条会话。
+
+批次示例（两份契约相互独立，不是把同一题重复发两次）：
+
+```json
+{
+  "version": 1,
+  "independent": true,
+  "tasks": [
+    {"id":"retry-review","request":{"backend":"harness","taskType":"review","mode":"inspect","instruction":"审查重试模块，给出可复现的契约违反；可无发现。","input":"最多重试3次，调用方允许取消。","files":["D:/project/retry.mjs"]}},
+    {"id":"format-module","request":{"backend":"zcode","taskType":"implement","mode":"propose","instruction":"实现独立的字节格式化模块，用helper_write_artifact保存format.mjs候选。","input":"export formatBytes(n)：非负安全整数；0为0 B；1024为1 KiB；小数保留一位；非法输入抛TypeError。","files":[]}}
+  ]
+}
+```
+
+```powershell
+node "<本技能目录>/scripts/delegate-batch.mjs" "D:/project/work/batch.json" "D:/project/work/batch-results-001"
+```
+
+批次必须恰好两个包、显式不同后端、互不依赖；`id` 为1–48位小写字母开头的字母/数字/连字符，不得重名、使用设备名或占用 `batch-plan` / `batch-result`。结果目录必须不存在且父目录已存在。入口先预检两份请求和快照选择，防止一个明显无效的包仍让另一路消耗额度。每路在运行时建立独立不可变快照，分别使用自身总预算和无进展预算。每路结束即保存 `<id>.json`，全部结束后保存 `batch-result.json`；`batch-plan.json` 仅含选路和模式，不复制输入正文。
+
+批次不自动重试、切后端、合并或应用候选；一路失败仍保存另一路结果。Ctrl+C/SIGTERM 传递取消并等待各自清理。批次 `ok:true` 要求两份结果的后端一致、固定模型和调用证据机械通过且保存成功，`semanticAcceptance` 始终为 false。仍应单独执行 `verify-result.mjs` 和语义验收。它只限制本批次每路一个包，不是跨进程的全局调度器；不要在已有该后端任务运行时重复开启占用同一路的批次。
 
 每路都允许主代理根据验证反馈继续派发新会话；切换后端不能重置同一交付物、同一纠错目标的两轮默认上限。需要前一包输出的后续工作先等其独立核验通过，再提供必要结果作为新输入。两路同时成功只证明对应调用完成，不能代替交付验收，也不能据此承诺提速或额度节省。
 

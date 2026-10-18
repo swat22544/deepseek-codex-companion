@@ -5,6 +5,8 @@ description: 在 Codex 中打开本机 DeepSeek Harness 与 ZCode GLM 辅助任�
 
 在用户已授权的本地监看范围及宿主当前权限内，调用本插件 `monitor_open` 显示只读 MCP App。授权依据为当前用户的明确设置或后续指令；安装文件本身不代表授权。面板自动刷新本地任务列表、公开回复文本、工具活动、模型确认状态、候选文件和失败原因。它不会发起模型请求或更改辅助代理权限。
 
+1.4.0 显示名为 **DeepSeek + GLM Monitor**，插件ID仍为 `deepseek-monitor`。双模型卡显示最近100条记录内的活动和数量，点击可筛选来源；可与状态和搜索组合。监看连接中断时活动统计可能过期；“两路均有任务进行中”不是后端可用性或模型同时推理的证明。不要因空闲卡片而主动制造任务。
+
 1.2.0 配套插件提供任务 Hook：信任并启用后，每次用户输入前直接加载完整 `deepseek-helper`，会话恢复或压缩后补回。它只注入协作规则，是否派遣由 Codex 按 Skill 决定；监看工具继续只读。未信任、被禁用或宿主不支持时不能假定 Hook 已执行。
 
 下文 `<CODEX_HOME>` 指环境变量 `CODEX_HOME`；未设置时使用 `os.homedir()` 下的 `.codex`。如果当前宿主未渲染 MCP App，使用返回的 `structuredContent.browser.url` 调用 `open_in_codex`，target type browser，放到右侧面板。没有加载新工具时，通过 Node.js 运行已安装插件根目录下的 `server/launch.mjs`；优先相对于本技能目录定位 `../../server/launch.mjs`，标准安装位置为 `<CODEX_HOME>/plugins/deepseek-monitor/server/launch.mjs`。用返回的 `url` 在 `open_in_codex` 中打开。后台服务只监听 127.0.0.1；URL 中的访问令牌仅用于本机窗口，不要发送给外部服务。
@@ -25,4 +27,4 @@ description: 在 Codex 中打开本机 DeepSeek Harness 与 ZCode GLM 辅助任�
 
 可选的 `<CODEX_HOME>/deepseek-monitor/service-config.json` 可固定本机端口和访问令牌；不存在时仍使用随机端口。`server/watchdog.mjs` 只负责恢复监看 HTTP 服务，不执行或续作模型任务。安装包不会自动创建系统登录任务；已有本机配置或登录启动项应在更新时保留。令牌、服务配置、运行记录与日志均不发布到 GitHub。
 
-当用户要执行新任务时读取并应用已安装的 deepseek-helper Skill，由它选择 `backend`、读取相应本机配置并在已有授权范围内委派；不要由监看工具开放新的执行能力或更改后端。Harness 默认 **DeepSeek-V41-Flash / Max**，ZCode 固定 **GLM-5.3-Flash / Max**，使用 Z.ai 标准 API 的 `zai-standard-api` 提供方；设置与工具约束由各自适配器核验，面板展示不能代替调用验证。用户只问状态时使用 monitor_list/monitor_get，不发起额外模型请求。旧 DeepSeek 能力评估不能作为 GLM 能力评估。
+当用户要执行新任务时读取并应用已安装的 deepseek-helper Skill，由它选择 `backend`、读取相应本机配置并在已有授权范围内委派；不要由监看工具开放新的执行能力或更改后端。Harness 固定 **DeepSeek-V41-Flash / Max**，ZCode 固定 **GLM-5.3-Flash / Max**，使用 Z.ai 标准 API 的 `zai-standard-api` 提供方；设置与工具约束由各自适配器核验，面板展示不能代替调用验证。用户只问状态时使用 monitor_list/monitor_get，不发起额外模型请求。旧 DeepSeek 能力评估不能作为 GLM 能力评估。

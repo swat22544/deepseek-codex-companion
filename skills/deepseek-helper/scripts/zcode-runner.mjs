@@ -92,14 +92,15 @@ export function createZCodeClient(executable,args,{cwd,env,onEvent=()=>{},onRequ
   }};
 }
 
-export async function delegate(raw){
+export async function delegate(raw,{signal}={}){
+  signal?.throwIfAborted();
   const request=validateRequest(raw);if(request.backend!=='zcode')throw new Error('ZCode runner requires backend zcode.');
   const monitor=await createMonitor(request);
-  try{const result=await runDelegate(request,monitor);return {...result,monitor:await monitor.finish(result)};}
+  try{const result=await runDelegate(request,monitor,signal);return {...result,monitor:await monitor.finish(result)};}
   catch(error){await monitor.finish({ok:false,error:error.message});throw error;}
 }
 
-async function runDelegate(request,monitor){
+async function runDelegate(request,monitor,signal){
   const paths=resolveZCodePaths();
   const executable=paths.nodeExecutable??paths.executable??process.execPath,entrypoint=paths.entrypoint;
   if(!entrypoint||!existsSync(entrypoint))throw new Error('ZCode CLI is missing. Configure --zcode-home.');
@@ -146,7 +147,7 @@ async function runDelegate(request,monitor){
     else throw new Error('Unknown ZCode helper audit event.');
   });
   const tick=async()=>{try{await readGuard();}catch(e){auditError??=e;}try{await readTools();}catch(e){auditError??=e;}monitor.timing(timing());};
-  const check=()=>{if(auditError)throw auditError;const d=evaluateDeadline(clock);if(d.failure)throw Object.assign(new Error(d.failure),{timeout:d.timeout});};
+  const check=()=>{signal?.throwIfAborted();if(auditError)throw auditError;const d=evaluateDeadline(clock);if(d.failure)throw Object.assign(new Error(d.failure),{timeout:d.timeout});};
   const timer=setInterval(tick,150);
   const cancel=()=>{auditError??=new Error('Task cancelled by supervisor.');};
   process.on('SIGINT',cancel);process.on('SIGTERM',cancel);
@@ -164,9 +165,11 @@ async function runDelegate(request,monitor){
     // inspected wire and scoped MCP audit can extend the progress deadline.
   }
   try{
+    check();
     const versionEnv={...env};delete versionEnv.CODEX_ZCODE_POLICY;
     const version=await runOwned(executable,[entrypoint,'--version'],{cwd:workspace,env:versionEnv,clock,check});
     if(version.output.trim()!=='0.16.9')throw new Error('ZCode adapter is verified only for CLI 0.16.9; review another version before using it.');
+    check();
     client=createZCodeClient(executable,['--require',join(here,'zcode-guard.cjs'),entrypoint,'app-server','--stdio'],{cwd:workspace,env,check,onEvent:event,onRequest:message=>{
       if(message.method==='session/requestRuntimePreferences')return {nativeSearchEnhancementsEnabled:false,subagentRuntimeConfigEnabled:false,memoryEnabled:false,askUserQuestionAutoResolutionEnabled:false};
       if(message.method==='interaction/requestPermission')return {decision:message.params?.sessionId===sessionId&&allowedTools.includes(message.params?.toolName)?'allow':'deny'};

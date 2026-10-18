@@ -65,7 +65,7 @@ test('connection labels refer to monitoring, not model progress',()=>{
 test('backend detail uses explicit fixed labels and legacy Harness fallback',()=>{
  for(const backend of [undefined,'harness','zcode']){
   const p=render({...base(),backend,model:{model:backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash',reasoningEffort:'max'}});
-  assert.equal(p.node('task-backend').textContent,backend==='zcode'?'ZCode':'Harness');
+  assert.equal(p.node('task-backend').textContent,backend==='zcode'?'GLM · ZCode':'DeepSeek · Harness');
   assert.equal(p.node('task-model').textContent,backend==='zcode'?'GLM-5.3-Flash · Max':'DeepSeek-V41-Flash · Max');
  }
 });
@@ -85,8 +85,10 @@ test('backend list source distinguishes same-title tasks and can be searched',()
  const buttons=()=>p.node('run-list').children[0].children.map(item=>item.children[0]);
  assert.equal(buttons().length,2);
  assert.match(buttons()[0].title,/Harness/);assert.match(buttons()[1].title,/ZCode/);
- assert.equal(buttons()[0].children[1].children[1].children[0].textContent,'Harness · 进行中');
- assert.equal(buttons()[1].children[1].children[1].children[0].textContent,'ZCode · 进行中');
+ assert.equal(buttons()[0].children[1].children[1].children[0].textContent,'DeepSeek');
+ assert.equal(buttons()[1].children[1].children[1].children[0].textContent,'GLM');
+ assert.equal(buttons()[0].children[1].children[1].children[1].textContent,'进行中');
+ assert.equal(buttons()[1].children[1].children[1].children[1].textContent,'进行中');
  p.state.query='zcode';p.renderList();
  assert.equal(buttons().length,1);assert.equal(buttons()[0].dataset.runId,'z');
  p.state.query='';p.state.runs[1].backend='harness';p.renderList();

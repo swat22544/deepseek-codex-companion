@@ -2,7 +2,7 @@
 name: deepseek-helper
 description: 在中等开发任务的多个阶段主动通过本机 DeepSeek Harness 与 ZCode 的 GLM-5.3-Flash 协作，可并行委派独立的候选实现、测试、局部重构、故障分析与审查，再根据验证反馈续作。主代理控制后端、范围、执行和采纳，分别核验代码、说明、引用与测试预期。
 metadata:
-  revision: "2026-10-15-zcode-glm"
+  revision: "2026-10-18-dual-dispatch"
 ---
 
 # DeepSeek / GLM 受控协作
@@ -13,7 +13,18 @@ metadata:
 
 两路辅助代理可以深入参与有一定复杂度的局部工作；不要把它们限制为只做短文本，也不要因回复完整或任务简单而免检。主代理确定目标、选择材料与预算、执行命令、修改项目并作最终决定。一次评估中的通过数不能当作日常可靠率。
 
-Harness 与 ZCode 是两个外部执行后端，不是 Codex 原生子代理线程。默认使用 Harness 的 DeepSeek-V41-Flash / Max；第二路使用 ZCode 中的 Z.ai API / GLM-5.3-Flash / 最高（max）。有两个独立且值得委派的工作包时，可同时启动两路，通常各一路。两者遵守相同受控权限，模型、来源和结果分别核验。技能名称与安装路径保留 `deepseek-helper`，供既有 Hook 和调用入口兼容使用。
+Harness 与 ZCode 是两个平等可选的外部执行后端，不是 Codex 原生子代理线程。Harness 固定 DeepSeek-V41-Flash / Max；ZCode 固定 Z.ai API / GLM-5.3-Flash / 最高（max）。ZCode 可以承担唯一或第一个工作包，不是备用后端。有两个独立、材料充分且值得委派的工作包时，默认分配到两路并行启动，再等待结果；不能先等一路完成才启动另一路。两者遵守相同受控权限，模型、来源和结果分别核验。技能名称与安装路径保留 `deepseek-helper`，供既有 Hook 和调用入口兼容使用。
+
+## 每阶段先做路由决定
+
+开始拆分、进入实现/测试、收到新需求或失败证据时，先数清当前已经准备好的独立工作包，再选择调用方式：
+
+1. **没有值得委派的包**：主代理直接完成。
+2. **只有一个包**：显式选择后端。续作优先保持原后端；已有一路忙碌而另一路可用时选空闲一路。没有上下文、可用性或任务适配差异时，`implement/test-design` 优先 ZCode，`analyze/review/debug/plan` 优先 Harness；其他类型选择本次对话调用较少的一路，相同则 ZCode。这只是避免单一路径惯性的起始分配，不是模型能力排名。
+3. **两个包均已就绪且无依赖**：一包 Harness、一包 ZCode，优先使用下文的 `delegate-batch.mjs` 一次启动。不要在第一条调用后立即等待、轮询或验收，导致第二条迟迟没有启动。
+4. **存在前置依赖、用户只选一路、后端已知不可用或资源约束**：顺序执行或使用指定一路，简短说明实际原因。不要为满足比例硬拆任务；失败先诊断，不将批次失败自动换成另一路。
+
+首次分工用一句话说明“DeepSeek 做什么、GLM 做什么、主代理做什么”；单路时说明选择依据即可。不要仅把“双路并行”写在计划中却执行串行，也不要把两路收到相同实现当作分工。
 
 ## 选择任务和权限
 
@@ -42,7 +53,7 @@ Harness 与 ZCode 是两个外部执行后端，不是 Codex 原生子代理线�
 
 ## 两路协作与路由
 
-每个新请求只选择一个 `backend`：`harness`（省略时的默认值）或 `zcode`。不接受其他后端值，也不静默映射。先明确工作包之间的接口与目标文件，两个包不依赖对方尚未产生的结果时再并行；主代理推进集成或其他独立工作。需要前一包的已核验结果时按顺序派发。不要把同一实现同时交给两路，不为保持两个代理忙碌而增加无价值调用。
+每个新请求显式选择一个 `backend`：`harness` 或 `zcode`。旧单请求省略字段仍落到 Harness，仅用于兼容，不能作为新任务的选择理由；批次拒绝省略后端。不接受其他后端值，也不静默映射。先明确工作包之间的接口与目标文件，两个包不依赖对方尚未产生的结果时默认并行；主代理推进集成或其他独立工作。需要前一包的已核验结果时按顺序派发。不要把同一实现同时交给两路，不为保持两个代理忙碌而增加无价值调用。
 
 每路使用不同的请求与结果文件、独立会话和候选目录；后续反馈仍可分别继续，没有每路仅调用一次的限制。共同基线发生变化时先重新检查候选适用性，再合并。并行不等于总成本下降，不能根据一次重叠执行承诺提速或节省额度比例。
 
@@ -61,13 +72,21 @@ Harness 与 ZCode 是两个外部执行后端，不是 Codex 原生子代理线�
 
 ## 调用和监看
 
-本次对话首次实际委派前打开一次 DeepSeek Monitor。优先用已安装插件的 `monitor_open`；未加载时通过 Node.js 运行已安装插件根目录 `server/launch.mjs`，将返回的 `url` 用 `open_in_codex` 的 browser target 打开到右侧。标准目录为 `<CODEX_HOME>/plugins/deepseek-monitor`，其中 `CODEX_HOME` 未设置时为用户主目录下的 `.codex`。已经打开时不反复切换；启动失败时说明可见性问题，继续可做的工作，不改变调用权限。
+本次对话首次实际委派前打开一次 DeepSeek + GLM Monitor。优先用已安装插件的 `monitor_open`；未加载时通过 Node.js 运行已安装插件根目录 `server/launch.mjs`，将返回的 `url` 用 `open_in_codex` 的 browser target 打开到右侧。标准目录为 `<CODEX_HOME>/plugins/deepseek-monitor`，其中 `CODEX_HOME` 未设置时为用户主目录下的 `.codex`。已经打开时不反复切换；启动失败时说明可见性问题，继续可做的工作，不改变调用权限。
 
 将 UTF-8 请求放在当前任务的 `work/` 下，每次使用新的请求和结果文件名，保持当前任务工作目录：
 
 ```powershell
 node "<本技能目录>/scripts/delegate.mjs" "绝对路径/request.json" "绝对路径/result.json"
 ```
+
+两个已就绪的独立包使用批次入口：
+
+```powershell
+node "<本技能目录>/scripts/delegate-batch.mjs" "绝对路径/batch.json" "绝对路径/新的批次结果目录"
+```
+
+`batch.json` 顶层为 `{"version":1,"independent":true,"tasks":[{"id":"analysis","request":{...完整Harness请求...}},{"id":"implementation","request":{...完整ZCode请求...}}]}`。两个包必须对应不同目标或明确独立的交付物；`independent:true` 是主代理的判断，运行器无法证明语义独立。脚本预检全部请求和文件、一次启动两路、分别保存 `<id>.json`，最终写 `batch-result.json`；结果目录必须不存在。一路失败不会重试、转派或丢弃另一路结果。各路时限、会话、快照、候选和清理独立；Ctrl+C 向两路传递取消。批次 `ok` 仅表示两份调用证据机械通过，不表示候选已采用。完整可复制格式见 [请求与输出协议](references/request.md)。
 
 `<本技能目录>` 是当前 `SKILL.md` 所在目录；使用 PATH 或宿主提供的 Node.js，不假定个人缓存路径。同一入口按 `backend` 选择适配器，按需后台启动本机程序，结束后退出。Harness 使用独立的 `codex-helper` profile；ZCode 使用后台 app-server 与独立受控会话，默认程序根目录 `D:/Zcode`。程序位置以运行器/安装配置为准；不要直接调用普通桌面会话来绕过受控工具。路径与模型对应关系见 [请求与输出协议](references/request.md)。
 

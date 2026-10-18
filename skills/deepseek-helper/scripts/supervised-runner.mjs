@@ -46,10 +46,11 @@ async function ensureProfile(dshHome) {
   return dir;
 }
 
-export async function delegate(raw) {
+export async function delegate(raw, {signal} = {}) {
+  signal?.throwIfAborted();
   const monitor=await createMonitor(raw);
   try {
-    const result=await runDelegate(raw,monitor);
+    const result=await runDelegate(raw,monitor,signal);
     return {...result,monitor:await monitor.finish(result)};
   } catch(error) {
     await monitor.finish({ok:false,error:error.message});
@@ -57,7 +58,7 @@ export async function delegate(raw) {
   }
 }
 
-async function runDelegate(raw,monitor) {
+async function runDelegate(raw,monitor,signal) {
   const request=validateRequest(raw);
   if(request.backend!=='harness')throw new Error('Harness runner requires backend harness.');
   const {installation,executable,entrypoint,dshHome}=resolveRuntimePaths();
@@ -92,6 +93,7 @@ async function runDelegate(raw,monitor) {
   const calls=new Map(),toolResults=[],audits=[];
   const progress=createStreamProgressTracker(kind=>clock.markProgress(kind));
   let turn=null,ended=false;
+  signal?.throwIfAborted();
   const result=await new Promise(done=>{
     let settled=false;
     const cancel=()=>fail('Task cancelled by supervisor.');
@@ -99,6 +101,7 @@ async function runDelegate(raw,monitor) {
       if(settled)return;settled=true;clearInterval(timer);clearTimeout(cleanupTimer);
       if(!failure)({failure,timeout}=evaluateDeadline(clock));
       process.off('SIGINT',cancel);process.off('SIGTERM',cancel);
+      signal?.removeEventListener('abort',cancel);
       const complete=!!sessionId&&typeof final?.text==='string'&&!!final.text.trim()&&Number.isInteger(turn)&&ended&&stopReason?.kind==='completed'&&[...calls.keys()].every(id=>toolResults.some(r=>r.callId===id));
       const verified=modelRequests>0;
       const ok=exitCode===0&&!failure&&!cleanupIncomplete&&complete&&policyActive&&verified;
@@ -187,6 +190,7 @@ async function runDelegate(raw,monitor) {
       if(Date.now()-lastTimingUpdate>=1000){lastTimingUpdate=Date.now();monitor.timing(timing());}
     },250);
     process.on('SIGINT',cancel);process.on('SIGTERM',cancel);
+    signal?.addEventListener('abort',cancel,{once:true});
     child=spawn(executable,['--expose-internals',entrypoint,'--profile',profileName,'--patch',patch,'--json','-'],{cwd,windowsHide:true,shell:false,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',DSH_PERMISSION_MODE:'read-only',DSH_TOOLS_MODE:'native',CODEX_HELPER_POLICY:policyPath},stdio:['pipe','pipe','pipe']});
     child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');
     child.stdout.on('data',chunk=>{outputBytes+=Buffer.byteLength(chunk);if(outputBytes>4*1024*1024){fail('Output exceeded 4 MiB.');return;}stdout+=chunk;let nl;while((nl=stdout.indexOf('\n'))!==-1){consume(stdout.slice(0,nl));stdout=stdout.slice(nl+1);}});

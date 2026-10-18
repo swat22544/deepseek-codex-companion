@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "independent": true,
+  "tasks": [
+    {
+      "id": "retry-review",
+      "request": {
+        "backend": "harness",
+        "mode": "text",
+        "taskType": "review",
+        "instruction": "审查这段独立重试逻辑是否符合契约，给出可复现输入；无问题可直接说明。不要声称执行过代码。",
+        "input": "契约：最多调用operation三次，成功即返回，三次失败后抛最后错误。代码：async function retry(operation) { for (let i = 0; i <= 3; i++) { try { return await operation(); } catch (e) { if (i === 3) throw e; } } }"
+      }
+    },
+    {
+      "id": "byte-format",
+      "request": {
+        "backend": "zcode",
+        "mode": "propose",
+        "taskType": "implement",
+        "instruction": "用 helper_write_artifact 保存 format.mjs 候选，导出 formatBytes(n)。只交付该模块，并简述未执行测试。",
+        "input": "接受非负安全整数，否则抛 TypeError。小于1024输出整数加空格B；大于等于1024输出(n/1024).toFixed(1)加空格KiB。例：0 -> 0 B，1024 -> 1.0 KiB。不依赖重试模块，无外部依赖。",
+        "files": []
+      }
+    }
+  ]
+}
