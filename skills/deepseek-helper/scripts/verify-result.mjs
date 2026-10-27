@@ -7,7 +7,7 @@ import { hasDuplicateJsonItems } from './canonical-json.mjs';
 // This module only checks saved evidence. It never loads the runner or monitor,
 // invokes a model, reads candidate files, applies edits, or executes candidates.
 const MODEL = Object.freeze({ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' });
-const ZCODE_MODEL = Object.freeze({ provider: 'zai-standard-api', model: 'GLM-5.3-Flash', reasoningEffort: 'max' });
+const ZCODE_MODEL = Object.freeze({ provider: 'zai-standard-api', model: 'GLM-5.3-Flash', reasoningEffort: 'high' });
 const TYPES = new Set(['array', 'object', 'string', 'number', 'integer', 'boolean', 'null']);
 const CONTRACT_KEYS = new Set(['format', 'type', 'requiredKeys', 'allowedKeys', 'uniqueItems', 'expected']);
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);

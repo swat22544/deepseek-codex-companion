@@ -2,7 +2,7 @@
 name: deepseek-helper
 description: 在中等开发任务的多个阶段主动通过本机 DeepSeek Harness 与 ZCode 的 GLM-5.3-Flash 协作，可并行委派独立的候选实现、测试、局部重构、故障分析与审查，再根据验证反馈续作。主代理控制后端、范围、执行和采纳，分别核验代码、说明、引用与测试预期。
 metadata:
-  revision: "2026-10-18-dual-dispatch"
+  revision: "2026-10-25-model-settings"
 ---
 
 # DeepSeek / GLM 受控协作
@@ -13,7 +13,9 @@ metadata:
 
 两路辅助代理可以深入参与有一定复杂度的局部工作；不要把它们限制为只做短文本，也不要因回复完整或任务简单而免检。主代理确定目标、选择材料与预算、执行命令、修改项目并作最终决定。一次评估中的通过数不能当作日常可靠率。
 
-Harness 与 ZCode 是两个平等可选的外部执行后端，不是 Codex 原生子代理线程。Harness 固定 DeepSeek-V41-Flash / Max；ZCode 固定 Z.ai API / GLM-5.3-Flash / 最高（max）。ZCode 可以承担唯一或第一个工作包，不是备用后端。有两个独立、材料充分且值得委派的工作包时，默认分配到两路并行启动，再等待结果；不能先等一路完成才启动另一路。两者遵守相同受控权限，模型、来源和结果分别核验。技能名称与安装路径保留 `deepseek-helper`，供既有 Hook 和调用入口兼容使用。
+Harness 与 ZCode 是两个平等可选的外部执行后端，不是 Codex 原生子代理线程。Harness 固定 DeepSeek-V4.1-Flash-1017 / Max；ZCode 固定 Z.ai API / GLM-5.3-Flash / 高（high）。ZCode 可以承担唯一或第一个工作包，不是备用后端。有两个独立、材料充分且值得委派的工作包时，默认分配到两路并行启动，再等待结果；不能先等一路完成才启动另一路。两者遵守相同受控权限，模型、来源和结果分别核验。技能名称与安装路径保留 `deepseek-helper`，供既有 Hook 和调用入口兼容使用。
+
+当前设置（2026-10-25）：Harness 使用 DeepSeek-V4.1-Flash-1017 / Max；官方 API 继续使用 `deepseek-flash`，该别名已于 2026-10-17 升级至 1017 版本，不编造带日期的新 API ID（[官方更新说明](https://api-docs.deepseek.com/updates/#deepseek-v41-flash-1017-update)）。ZCode 按用户要求从 `max` 下调一档至 `high`；本机 GLM-5.3-Flash 档位为 `low / high / max`，会话与实际请求均严格核验 `high`。此设置取代旧版“两路均为 max”的约定；后续未经用户指示不自动改回 max。
 
 ## 每阶段先做路由决定
 
@@ -90,7 +92,7 @@ node "<本技能目录>/scripts/delegate-batch.mjs" "绝对路径/batch.json" "�
 
 `<本技能目录>` 是当前 `SKILL.md` 所在目录；使用 PATH 或宿主提供的 Node.js，不假定个人缓存路径。同一入口按 `backend` 选择适配器，按需后台启动本机程序，结束后退出。Harness 使用独立的 `codex-helper` profile；ZCode 使用后台 app-server 与独立受控会话，默认程序根目录 `D:/Zcode`。程序位置以运行器/安装配置为准；不要直接调用普通桌面会话来绕过受控工具。路径与模型对应关系见 [请求与输出协议](references/request.md)。
 
-按后端固定模型：**Harness = DeepSeek-V41-Flash / Max**，核对 `deepseek-official / deepseek-flash / max`；**ZCode = Z.ai API / GLM-5.3-Flash / 最高**，核对会话的模型与 `reasoningLevel: max`，以及实际标准 API 请求的 `reasoning_effort: max`。ZCode 复用用户已配置的 `https://api.z.ai/api/paas/v4` Chat Completions 服务，不自动切换 Coding Plan 或其他提供方，不将密钥复制进请求、代码、Skill 或 Hook。不能只因桌面设置正确就跳过本次调用的核验。不静默换模型、降级推理等级或绕过权限校验；保留独立配置、超时、输出限额与进程清理保护。监看面板用 Harness/ZCode 标识当前来源；缺后端字段的历史记录按 Harness 显示。
+按后端固定模型：**Harness = DeepSeek-V4.1-Flash-1017 / Max**，核对 `deepseek-official / deepseek-flash / max`；**ZCode = Z.ai API / GLM-5.3-Flash / 高（high）**，核对会话的模型与 `reasoningLevel: high`，以及实际标准 API 请求的 `reasoning_effort: high`。ZCode 复用用户已配置的 `https://api.z.ai/api/paas/v4` Chat Completions 服务，不自动切换 Coding Plan 或其他提供方，不将密钥复制进请求、代码、Skill 或 Hook。不能只因桌面设置正确就跳过本次调用的核验。不静默换模型、降级推理等级或绕过权限校验；保留独立配置、超时、输出限额与进程清理保护。监看面板用 Harness/ZCode 标识当前来源；缺后端字段的历史记录按 Harness 显示。
 
 ## 按任务规模分配时间
 
@@ -104,7 +106,7 @@ node "<本技能目录>/scripts/delegate-batch.mjs" "绝对路径/batch.json" "�
 
 **候选代码、解释文字、源码引用、边界示例和测试预期分别核验；不能因主要结论正确，就默认附加内容正确。** 检查影响结论或采用行为的实质性内容，不把每次委派扩张成无关审计。
 
-1. **调用层**：确认本次进程退出码 0，结果后端与请求一致，`ok/policyActive/modelSelectionVerified` 为真，该后端固定模型一致，`stopReason.kind=completed`，存在非空最终回复，且没有未完成清理。ZCode 还需 `runtimeEvidenceVerified: true`，确认实际会话、请求模型、最高思考强度与工具范围；不能只信请求里的模型名称。检查工具错误是否导致缺失部分；两路分别检查，不能以其中一路成功代替另一路。这只能证明调用完成。
+1. **调用层**：确认本次进程退出码 0，结果后端与请求一致，`ok/policyActive/modelSelectionVerified` 为真，该后端固定模型一致，`stopReason.kind=completed`，存在非空最终回复，且没有未完成清理。ZCode 还需 `runtimeEvidenceVerified: true`，确认实际会话、请求模型、配置的高思考强度（high）与工具范围；不能只信请求里的模型名称。检查工具错误是否导致缺失部分；两路分别检查，不能以其中一路成功代替另一路。这只能证明调用完成。
 2. **交付层**：按预先契约核验格式、集合完整性、数值、代码行为、引用和实例。采用分析、审查、测试或候选文件前，读 [分类验收规则](references/verification.md) 的相关部分。模型自称完成、主动自检或多次重复同一结论都不是独立证明。
 3. **采用层**：只采用已核验的部分，修正或舍弃错误的附加内容，保留未确认项。候选代码先审阅、比对快照哈希与当前基线，再由主代理运行有意义的测试和应用改动；测试通过不等于已经应用。
 

@@ -20,21 +20,22 @@ async function fixture(t){
 
 test('ZCode monitor records GLM identity while Harness retains DeepSeek',async t=>{
  const root=await fixture(t);
- for(const [backend,label,model,display]of [['harness','Harness','deepseek-flash','DeepSeek-V41-Flash'],['zcode','ZCode','GLM-5.3-Flash','GLM-5.3-Flash']]){
+ for(const [backend,label,model,display]of [['harness','Harness','deepseek-flash','DeepSeek-V4.1-Flash-1017'],['zcode','ZCode','GLM-5.3-Flash','GLM-5.3-Flash']]){
   const monitor=await createMonitor({backend,instruction:'Backend identity fixture'},{directory:join(root,'runs')});
   try{
+   const reasoningEffort=backend==='zcode'?'high':'max',effortLabel=backend==='zcode'?'High':'Max';
    const initial=JSON.parse(await readFile(monitor.path,'utf8'));
    assert.equal(initial.modelSelectionVerified,false);
-   assert.deepEqual(initial.model,{model,reasoningEffort:'max'});
+   assert.deepEqual(initial.model,{model,reasoningEffort});
    monitor.harness({type:'session'});
    monitor.control({event:'model',model:'PRIVATE_MODEL',reasoningEffort:'PRIVATE_EFFORT'});
    await monitor.finish({ok:true,policyActive:true,modelSelectionVerified:true,final:{text:'fixture complete'}});
    const final=await getRun(monitor.id,root);
    assert.equal(final.backend,backend);
-   assert.deepEqual(final.model,{model,reasoningEffort:'max'});
+   assert.deepEqual(final.model,{model,reasoningEffort});
    assert.equal(final.modelSelectionVerified,true);
    assert.equal(final.events.find(event=>event.kind==='session').label,`${display} 已启动 · ${label}`);
-   assert.equal(final.events.find(event=>event.kind==='model').label,`${display} / Max 已确认 · ${label}`);
+   assert.equal(final.events.find(event=>event.kind==='model').label,`${display} / ${effortLabel} 已确认 · ${label}`);
    assert.equal(JSON.stringify(final).includes('PRIVATE'),false);
   }finally{await monitor.finish({ok:false});}
  }
@@ -64,7 +65,7 @@ test('monitor store filters model metadata and does not relay unknown or mismatc
   const expected=backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash';
   const valid={model:expected,reasoningEffort:'max',privatePayload:'PRIVATE'};
   assert.deepEqual(summary({backend,model:valid}).model,{model:expected,reasoningEffort:'max'});
-  for(const model of [undefined,{}, {model:'PRIVATE',reasoningEffort:'PRIVATE'},{model:expected,reasoningEffort:'high'},{model:backend==='zcode'?'deepseek-flash':'GLM-5.3-Flash',reasoningEffort:'max'}]){
+  for(const model of [undefined,{}, {model:'PRIVATE',reasoningEffort:'PRIVATE'},{model:expected,reasoningEffort:backend==='zcode'?'low':'high'},{model:backend==='zcode'?'deepseek-flash':'GLM-5.3-Flash',reasoningEffort:'max'}]){
    const record={id:randomUUID(),version:1,backend,model,done:true,startedAt:new Date().toISOString()};
    await writeFile(join(root,'runs',record.id+'.json'),JSON.stringify(record));
    assert.equal((await getRun(record.id,root)).model,null);

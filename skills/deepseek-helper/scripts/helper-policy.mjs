@@ -3,6 +3,7 @@ import { isAbsolute, basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { validateTimeoutOptions } from './timeout-policy.mjs';
 
+// Official deepseek-flash alias serves DeepSeek-V4.1-Flash-1017 (2026-10-17).
 export const MODEL = Object.freeze({ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' });
 export const MODES = new Set(['text', 'inspect', 'propose']);
 const TASKS = new Set(['extract', 'classify', 'format', 'draft', 'analyze', 'review', 'debug', 'plan', 'implement', 'test-design']);

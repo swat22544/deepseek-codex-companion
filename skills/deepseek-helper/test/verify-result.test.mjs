@@ -63,12 +63,12 @@ test('tool failures are separate from a structurally completed protocol', () => 
   assert.deepEqual(report.tools.errors, [{ callId: 'c1', tool: 'read_snapshot', status: 'error' }]);
 });
 
-test('ZCode requires the selected standard Z.ai provider, GLM model, Max and runtime evidence',()=>{
- const zcode={...valid(),backend:'zcode',runtimeEvidenceVerified:true,modelSelection:{provider:'zai-standard-api',model:'GLM-5.3-Flash',reasoningEffort:'max'}};
+test('ZCode requires the selected standard Z.ai provider, GLM model, High and runtime evidence',()=>{
+ const zcode={...valid(),backend:'zcode',runtimeEvidenceVerified:true,modelSelection:{provider:'zai-standard-api',model:'GLM-5.3-Flash',reasoningEffort:'high'}};
  assert.equal(verifyResult(zcode).mechanicalOk,true);
  for(const change of [
   {provider:'deepseek'},{provider:'zcode'},{provider:'account:zai-individual-coding-plan'},
-  {model:'deepseek-flash'},{model:'GLM-5.3'},{model:'glm-5.3-flash'},{reasoningEffort:'high'}
+  {model:'deepseek-flash'},{model:'GLM-5.3'},{model:'glm-5.3-flash'},{reasoningEffort:'max'},{reasoningEffort:'low'}
  ])assert.ok(verifyResult({...zcode,modelSelection:{...zcode.modelSelection,...change}}).protocol.issues.some(item=>item.code==='model_mismatch'));
  for(const runtimeEvidenceVerified of [undefined,false,'true',1])assert.equal(verifyResult({...zcode,runtimeEvidenceVerified}).mechanicalOk,false);
  assert.equal(verifyResult({...zcode,backend:'retired-backend'}).mechanicalOk,false);

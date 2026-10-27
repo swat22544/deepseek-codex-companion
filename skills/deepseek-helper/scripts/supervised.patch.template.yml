@@ -1,3 +1,4 @@
+# Official deepseek-flash alias: DeepSeek-V4.1-Flash-1017; Harness effort remains max.
 # Invocation-local supervised helper. Native tools disabled; custom snapshot tools only.
 - id: agent-default-model
   config:
@@ -10,7 +11,14 @@
     mode: native
 
 - id: headless-runner
-  inject: [headlessStartup, codexSupervisorGuard]
+  inject: [headlessStartup, credentials, codexSupervisorGuard]
+
+# Current dsh-headless disables the interactive credential store by default.
+# Reuse its managed references without copying secrets into requests or env.
+- id: credentials
+  disabled: false
+  config:
+    watch: false
 
 - insert:
     - id: codex-supervisor-guard

@@ -13,7 +13,7 @@ const inputLimit = 1_048_576;
 const skillLimit = 32_768;
 const outputLimit = 262_144;
 const skillHeader = '---\nname: deepseek-helper\ndescription: Controlled external collaboration\n---\n';
-const policyBody = '# 受控辅助代理\n\nHarness 与 ZCode 是两路外部辅助代理。独立工作包可同时派遣，通常各一路。\n每次任务先应用本技能，再自主判断是否值得委派；简单任务不强行调用。\nHarness 固定 DeepSeek-V41-Flash / Max；ZCode 固定 Z.ai API / GLM-5.3-Flash / Max。主代理逐项核验候选，候选不会自动应用。\n';
+const policyBody = '# 受控辅助代理\n\nHarness 与 ZCode 是两路外部辅助代理。独立工作包可同时派遣，通常各一路。\n每次任务先应用本技能，再自主判断是否值得委派；简单任务不强行调用。\nHarness 固定 DeepSeek-V4.1-Flash-1017 / Max；ZCode 固定 Z.ai API / GLM-5.3-Flash / High。主代理逐项核验候选，候选不会自动应用。\n';
 const fixtureSkill = skillHeader + policyBody;
 const supportedInputs = [
   {hook_event_name: 'UserPromptSubmit'},
@@ -116,8 +116,8 @@ for (const input of supportedInputs) {
     assert.ok(result.value.hookSpecificOutput.additionalContext.includes('Harness 与 ZCode'));
     assert.ok(result.value.hookSpecificOutput.additionalContext.includes('独立工作包可同时派遣'));
     assert.ok(result.value.hookSpecificOutput.additionalContext.includes('简单任务不强行调用'));
-    assert.ok(result.value.hookSpecificOutput.additionalContext.includes('DeepSeek-V41-Flash / Max'));
-    assert.ok(result.value.hookSpecificOutput.additionalContext.includes('Z.ai API / GLM-5.3-Flash / Max'));
+    assert.ok(result.value.hookSpecificOutput.additionalContext.includes('DeepSeek-V4.1-Flash-1017 / Max'));
+    assert.ok(result.value.hookSpecificOutput.additionalContext.includes('Z.ai API / GLM-5.3-Flash / High'));
     assert.ok(result.value.hookSpecificOutput.additionalContext.includes('未调用外部模型'));
   });
 }

@@ -300,11 +300,11 @@ svg { display: block; flex-shrink: 0; width: 16px; height: 16px; fill: none; str
       <div class="overview-heading"><div><span class="overline">COLLABORATION</span><h2>协作总览</h2></div><p id="parallel-summary" aria-live="polite">正在读取两路任务</p></div>
       <div class="backend-cards">
         <button class="backend-card" id="card-harness" data-backend="harness" type="button" aria-pressed="false" aria-label="筛选 DeepSeek 任务">
-          <span class="backend-symbol" aria-hidden="true">D</span><span class="backend-copy"><strong class="backend-name">DeepSeek <small>Harness</small></strong><span class="backend-model">V41 Flash · Max</span></span>
+          <span class="backend-symbol" aria-hidden="true">D</span><span class="backend-copy"><strong class="backend-name">DeepSeek <small>Harness</small></strong><span class="backend-model">V4.1 Flash 1017 · Max</span></span>
           <span class="backend-metrics"><strong class="backend-active" id="active-harness">—</strong><span class="backend-total" id="total-harness">等待记录</span></span>
         </button>
         <button class="backend-card" id="card-zcode" data-backend="zcode" type="button" aria-pressed="false" aria-label="筛选 GLM 任务">
-          <span class="backend-symbol" aria-hidden="true">G</span><span class="backend-copy"><strong class="backend-name">GLM <small>ZCode</small></strong><span class="backend-model">5.3 Flash · Max</span></span>
+          <span class="backend-symbol" aria-hidden="true">G</span><span class="backend-copy"><strong class="backend-name">GLM <small>ZCode</small></strong><span class="backend-model">5.3 Flash · High</span></span>
           <span class="backend-metrics"><strong class="backend-active" id="active-zcode">—</strong><span class="backend-total" id="total-zcode">等待记录</span></span>
         </button>
       </div>
@@ -380,8 +380,9 @@ svg { display: block; flex-shrink: 0; width: 16px; height: 16px; fill: none; str
       const modelLabel = (run) => {
         if (!knownBackend(run)) return '等待模型信息 · —';
         const expected = run?.backend === 'zcode' ? 'GLM-5.3-Flash' : 'deepseek-flash';
-        if (run?.model?.model !== expected || run?.model?.reasoningEffort !== 'max') return '等待模型信息 · —';
-        return `${run.backend === 'zcode' ? 'GLM-5.3-Flash' : 'DeepSeek-V41-Flash'} · Max`;
+        const effort = run?.model?.reasoningEffort;
+        if (run?.model?.model !== expected || !(effort === 'max' || (run?.backend === 'zcode' && effort === 'high'))) return '等待模型信息 · —';
+        return `${run.backend === 'zcode' ? 'GLM-5.3-Flash' : 'DeepSeek-V4.1-Flash'} · ${effort === 'high' ? 'High' : 'Max'}`;
       };
       const active = (run) => run && (run.status === 'preparing' || run.status === 'running');
       const text = (value, fallback = '') => typeof value === 'string' ? value : fallback;
@@ -399,15 +400,18 @@ svg { display: block; flex-shrink: 0; width: 16px; height: 16px; fill: none; str
         unknown: '调用失败，具体错误类型未确认', aborted: '调用已取消', 'permission.rejected': '所需权限被拒绝', 'tool.execution': '工具执行失败',
         'provider.rate-limit': '模型服务触发限流', 'provider.auth': '模型服务认证失败', 'provider.quota': '模型服务额度不足', 'provider.content-filter': '模型服务拒绝了内容',
         'provider.transport': '与模型服务的通信失败', 'provider.internal': '模型服务内部错误', 'provider.invalid-output': '模型服务返回无效输出', 'provider.invalid-request': '模型服务拒绝了请求参数',
-        'provider.unsupported-operation': '模型服务不支持此次操作', 'provider.no-route': '没有可用的模型服务路由', 'provider.unknown': '模型服务返回未分类错误', 'provider.timeout': '模型服务请求超时'
+        'provider.unsupported-operation': '模型服务不支持此次操作', 'provider.no-route': '没有可用的模型服务路由', 'provider.unknown': '模型服务返回未分类错误', 'provider.timeout': '模型服务请求超时',
+        'supervisor.output-limit': '本地运行器输出保护已触发', 'supervisor.invalid-stream': '本地校验发现响应流格式异常'
       };
       const errorReasonNames = {
         connection_reset: '连接被重置', connection_refused: '连接被拒绝', dns_failure: 'DNS 解析失败', tls_failure: 'TLS 连接失败', stream_interrupted: '响应流中断',
         request_timeout: '请求等待超时', rate_limited: '请求受到限流', quota_exceeded: '服务额度不足', context_length_exceeded: '上下文长度超出限制',
-        missing_reasoning_content: '请求缺少必需的推理内容字段', invalid_tool_call: '工具调用格式无效', invalid_api_key: 'API 密钥无效', permission_denied: '服务拒绝权限', cancelled: '请求已取消', provider_unavailable: '模型服务暂不可用'
+        missing_reasoning_content: '请求缺少必需的推理内容字段', invalid_tool_call: '工具调用格式无效', invalid_api_key: 'API 密钥无效', permission_denied: '服务拒绝权限', cancelled: '请求已取消', provider_unavailable: '模型服务暂不可用',
+        stream_size_limit: '单次响应流累计字节超限', stream_line_limit: '响应流单行长度超限', public_output_limit: '公开回复长度超限', protocol_size_limit: 'CLI 协议输出超限',
+        invalid_stream: '响应流数据格式无效', invalid_stream_utf8: '响应流字符编码无效', stream_processing_failed: '响应流处理失败，原因未确认'
       };
       const diagnosticNames = { not_needed: '无需恢复', skipped: '未执行恢复', recovered: '已恢复错误详情', unavailable: '错误详情不可用', failed: '恢复失败', timed_out: '恢复超时' };
-      const errorSourceNames = { cli: 'CLI', http: 'HTTP 响应', session: '会话记录' };
+      const errorSourceNames = { cli: 'CLI', http: 'HTTP 响应', session: '会话记录', guard: '本地流式守卫' };
       function errorDescription(value) {
         if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.source !== 'string' || !Object.hasOwn(errorSourceNames, value.source)) return [];
         const type = typeof value.type === 'string' && Object.hasOwn(errorTypeNames, value.type) ? value.type : 'unknown';

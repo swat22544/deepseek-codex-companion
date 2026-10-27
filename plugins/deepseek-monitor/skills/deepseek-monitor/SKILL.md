@@ -13,7 +13,7 @@ description: 在 Codex 中打开本机 DeepSeek Harness 与 ZCode GLM 辅助任�
 
 任务数据来自 `deepseek-helper` 的流式观察器，位于 `<CODEX_HOME>/deepseek-monitor/runs/`。只记录公开回复和经过筛选的活动，不记录隐藏推理、工具参数、快照内容或凭据。面板只能监看 helper 调用，不会导入 Harness 或 ZCode 桌面端全部会话，也不是 Codex 原生子代理列表。
 
-当前调用使用 `harness/zcode`，列表、任务详情与模型确认活动显示 Harness／ZCode 固定来源名称，可搜索后端名称。缺少来源字段的旧记录仍显示 Harness；显式不支持的后端记录不显示，也不误归为 Harness。模型标签只显示对应后端的固定名称与最高思考强度，不回显任意模型字符串。两个独立工作包可同时存在，回复、状态和预算按任务分别查看；一条完成不表示另一条也完成。任意路径或配置对象不会作为来源名称展示。
+当前调用使用 `harness/zcode`，列表、任务详情与模型确认活动显示 Harness／ZCode 固定来源名称，可搜索后端名称。缺少来源字段的旧记录仍显示 Harness；显式不支持的后端记录不显示，也不误归为 Harness。模型标签只显示对应后端的固定名称与指定思考强度，不回显任意模型字符串。两个独立工作包可同时存在，回复、状态和预算按任务分别查看；一条完成不表示另一条也完成。任意路径或配置对象不会作为来源名称展示。
 
 新版记录显示任务规模、总任务预算、无进展阈值、已运行时间、距上次有效进展及总预算剩余。显示的预算来自运行器，不由面板重新估算；旧记录没有预算字段时不补造。模型输出活动包含公开文字或仅推理活动元数据，不显示隐藏推理。面板自动刷新与连接心跳不代表模型进展，也不会延长任务时限。总任务时限和无进展超时应分别解释；无进展超时只代表在设定窗口内未观察到有效进展，不能据此断言网络故障或模型卡死。
 
@@ -27,4 +27,4 @@ description: 在 Codex 中打开本机 DeepSeek Harness 与 ZCode GLM 辅助任�
 
 可选的 `<CODEX_HOME>/deepseek-monitor/service-config.json` 可固定本机端口和访问令牌；不存在时仍使用随机端口。`server/watchdog.mjs` 只负责恢复监看 HTTP 服务，不执行或续作模型任务。安装包不会自动创建系统登录任务；已有本机配置或登录启动项应在更新时保留。令牌、服务配置、运行记录与日志均不发布到 GitHub。
 
-当用户要执行新任务时读取并应用已安装的 deepseek-helper Skill，由它选择 `backend`、读取相应本机配置并在已有授权范围内委派；不要由监看工具开放新的执行能力或更改后端。Harness 固定 **DeepSeek-V41-Flash / Max**，ZCode 固定 **GLM-5.3-Flash / Max**，使用 Z.ai 标准 API 的 `zai-standard-api` 提供方；设置与工具约束由各自适配器核验，面板展示不能代替调用验证。用户只问状态时使用 monitor_list/monitor_get，不发起额外模型请求。旧 DeepSeek 能力评估不能作为 GLM 能力评估。
+当用户要执行新任务时读取并应用已安装的 deepseek-helper Skill，由它选择 `backend`、读取相应本机配置并在已有授权范围内委派；不要由监看工具开放新的执行能力或更改后端。Harness 固定 **DeepSeek-V4.1-Flash-1017 / Max**，ZCode 固定 **GLM-5.3-Flash / High**，使用 Z.ai 标准 API 的 `zai-standard-api` 提供方；设置与工具约束由各自适配器核验，面板展示不能代替调用验证。用户只问状态时使用 monitor_list/monitor_get，不发起额外模型请求。旧 DeepSeek 能力评估不能作为 GLM 能力评估。

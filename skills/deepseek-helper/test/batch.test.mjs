@@ -15,7 +15,7 @@ const valid = backend => ({
   backend, ok: true, trust: 'unverified_candidate', verificationRequired: true,
   policyActive: true, modelSelectionVerified: true, runtimeEvidenceVerified: true,
   modelSelection: backend === 'zcode'
-    ? {provider: 'zai-standard-api', model: 'GLM-5.3-Flash', reasoningEffort: 'max'}
+    ? {provider: 'zai-standard-api', model: 'GLM-5.3-Flash', reasoningEffort: 'high'}
     : {provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max'},
   modelRequests: 1, exitCode: 0, sessionId: backend + '-session', stopReason: {kind: 'completed'},
   cleanup: {requested: false, treeKillConfirmed: false, incomplete: false}, error: null,

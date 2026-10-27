@@ -19,6 +19,15 @@ function panel(){
 function render(run){const p=panel();Object.assign(p.state,{run,selectedId:'r',connected:true,fetchedAt:Date.now(),follow:false});p.renderDetail();return p}
 const base=()=>({id:'r',title:'Task',status:'running',elapsedMs:60000,updatedAt:new Date().toISOString(),events:[],artifacts:[]});
 
+test('local stream and CLI ceilings are distinguished from provider failures in the panel',()=>{
+ for(const [source,reason,label] of [['guard','stream_size_limit','单次响应流累计字节超限'],['cli','protocol_size_limit','CLI 协议输出超限']]){
+  const p=render({...base(),status:'failed',errorDetails:{type:'supervisor.output-limit',httpStatus:null,source,reason}});
+  const text=p.node('run-error').textContent;
+  assert.match(text,/本地运行器输出保护已触发/);assert.ok(text.includes(label));assert.doesNotMatch(text,/认证失败|额度不足|网络故障/);
+  if(source==='guard')assert.ok(text.includes('本地流式守卫'));
+ }
+});
+
 test('active task displays separate budgets and measured idle duration',()=>{
  const p=render({...base(),timing:{taskSize:'large',sizeSource:'auto',totalSource:'auto',totalTimeoutMs:1200000,idleTimeoutMs:420000,totalElapsedMs:120000,idleElapsedMs:30000,lastProgressKind:'model_output'}});
  assert.equal(p.node('task-timing').hidden,false);assert.match(p.node('task-budgets').textContent,/总预算 20 分钟.*无进展阈值 7 分钟.*大任务/);
@@ -64,14 +73,14 @@ test('connection labels refer to monitoring, not model progress',()=>{
 
 test('backend detail uses explicit fixed labels and legacy Harness fallback',()=>{
  for(const backend of [undefined,'harness','zcode']){
-  const p=render({...base(),backend,model:{model:backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash',reasoningEffort:'max'}});
+  const p=render({...base(),backend,model:{model:backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash',reasoningEffort:backend==='zcode'?'high':'max'}});
   assert.equal(p.node('task-backend').textContent,backend==='zcode'?'GLM · ZCode':'DeepSeek · Harness');
-  assert.equal(p.node('task-model').textContent,backend==='zcode'?'GLM-5.3-Flash · Max':'DeepSeek-V41-Flash · Max');
+  assert.equal(p.node('task-model').textContent,backend==='zcode'?'GLM-5.3-Flash · High':'DeepSeek-V4.1-Flash · Max');
  }
 });
 
 test('model detail never displays arbitrary or cross-backend model and effort strings',()=>{
- for(const backend of ['harness','zcode'])for(const model of [undefined,{}, {model:'PRIVATE_MODEL',reasoningEffort:'PRIVATE_EFFORT'},{model:backend==='zcode'?'deepseek-flash':'GLM-5.3-Flash',reasoningEffort:'max'},{model:backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash',reasoningEffort:'high'}]){
+ for(const backend of ['harness','zcode'])for(const model of [undefined,{}, {model:'PRIVATE_MODEL',reasoningEffort:'PRIVATE_EFFORT'},{model:backend==='zcode'?'deepseek-flash':'GLM-5.3-Flash',reasoningEffort:'max'},{model:backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash',reasoningEffort:backend==='zcode'?'low':'high'}]){
   const p=render({...base(),backend,model});
   assert.equal(p.node('task-model').textContent,'等待模型信息 · —');
   assert.equal(p.node('verification').textContent,'等待调用核验');

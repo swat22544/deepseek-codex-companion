@@ -4,7 +4,14 @@
 const fs = require('node:fs');
 const ENDPOINT = 'https://api.z.ai/api/paas/v4/chat/completions';
 const MODEL = 'GLM-5.3-Flash';
+const REASONING_EFFORT = 'high';
 const MAX_BODY = 4 * 1024 * 1024;
+// SSE framing can dwarf the useful text during long reasoning turns. This is
+// a cumulative traffic budget, not retained memory; individual lines and public
+// text stay bounded separately, and the supervisor still enforces its deadlines.
+const MAX_STREAM_BYTES = 64 * 1024 * 1024;
+const MAX_LINE_CHARS = 1024 * 1024;
+const STREAM_CODES = new Set(['ZCODE_STREAM_LIMIT','ZCODE_STREAM_LINE_LIMIT','ZCODE_PUBLIC_OUTPUT_LIMIT','ZCODE_STREAM_INVALID','ZCODE_STREAM_UTF8','ZCODE_STREAM_INTERRUPTED','ZCODE_STREAM_FAILURE']);
 
 function validateWireRequest(url, init, policy) {
   const target = new URL(typeof url === 'string' || url instanceof URL ? url : url.url);
@@ -14,8 +21,8 @@ function validateWireRequest(url, init, policy) {
   if (!(typeof raw === 'string' || Buffer.isBuffer(raw) || raw instanceof Uint8Array) || Buffer.byteLength(raw) > MAX_BODY) throw new Error('ZCODE_BODY_INVALID');
   let body;
   try { body = JSON.parse(Buffer.from(raw).toString('utf8')); } catch { throw new Error('ZCODE_BODY_INVALID'); }
-  if (body.model !== MODEL || body.reasoning_effort !== 'max' || body.thinking?.type !== 'enabled'
-      || body.enable_thinking !== true || body.reasoning?.effort !== 'max' || body.stream !== true) throw new Error('ZCODE_MODEL_MISMATCH');
+  if (body.model !== MODEL || body.reasoning_effort !== REASONING_EFFORT || body.thinking?.type !== 'enabled'
+      || body.enable_thinking !== true || body.reasoning?.effort !== REASONING_EFFORT || body.stream !== true) throw new Error('ZCODE_MODEL_MISMATCH');
   if (typeof policy.sessionId !== 'string' || !policy.sessionId.startsWith('sess_')) throw new Error('ZCODE_SESSION_NOT_READY');
   if (!Array.isArray(body.messages) || !body.messages.length) throw new Error('ZCODE_MESSAGES_INVALID');
   const names = (body.tools ?? []).map(tool => {
@@ -24,43 +31,87 @@ function validateWireRequest(url, init, policy) {
   });
   if (new Set(names).size !== names.length || names.some(name => !policy.allowedTools.includes(name))
       || names.length !== policy.allowedTools.length) throw new Error('ZCODE_TOOL_MISMATCH');
-  return {model:MODEL, reasoningEffort:'max', tools:names};
+  return {model:MODEL, reasoningEffort:REASONING_EFFORT, tools:names};
 }
 
-function createSseInspector(emit, {maxBytes=8 * 1024 * 1024}={}) {
-  let buffer='', bytes=0, publicChars=0;
+function createSseInspector(emit, {maxBytes=MAX_STREAM_BYTES,now=()=>performance.now()}={}) {
+  let buffer='', bytes=0, publicChars=0, dataEvents=0, activityChars=0;
+  let pendingChars=0, pendingText='', lastProgress=-Infinity, lastPublic=-Infinity;
   const decoder=new TextDecoder('utf-8',{fatal:true});
+  function flushPublic(){if(pendingText){emit({event:'reply_stream',type:'text_delta',text:pendingText});pendingText='';lastPublic=now();}}
+  function flushProgress(){if(pendingChars){emit({event:'progress',charCount:pendingChars});pendingChars=0;lastProgress=now();}}
+  function flush(){flushPublic();flushProgress();}
+  function decode(chunk,options){try{return decoder.decode(chunk,options);}catch{throw new Error('ZCODE_STREAM_UTF8');}}
   function line(text) {
+    if(text.length>MAX_LINE_CHARS)throw new Error('ZCODE_STREAM_LINE_LIMIT');
     if (!text.startsWith('data:')) return;
     const raw=text.slice(5).trim();
     if (!raw || raw==='[DONE]') return;
     let data;
     try { data=JSON.parse(raw); } catch { throw new Error('ZCODE_STREAM_INVALID'); }
+    if(!data||typeof data!=='object'||!Array.isArray(data.choices??[]))throw new Error('ZCODE_STREAM_INVALID');
+    dataEvents++;
     for (const choice of data.choices ?? []) {
+      if(!choice||typeof choice!=='object')throw new Error('ZCODE_STREAM_INVALID');
       const delta=choice.delta ?? {};
+      if(typeof delta!=='object'||!Array.isArray(delta.tool_calls??[]))throw new Error('ZCODE_STREAM_INVALID');
       if (typeof delta.content==='string' && delta.content) {
         publicChars+=delta.content.length;
         if (publicChars>1024*1024) throw new Error('ZCODE_PUBLIC_OUTPUT_LIMIT');
-        emit({event:'reply_stream',type:'text_delta',text:delta.content});
+        pendingText+=delta.content;
+        if(pendingText.length>=4096||now()-lastPublic>=250)flushPublic();
       }
       // Private reasoning is counted, never retained in an audit event.
       const chars=[delta.content,delta.reasoning_content,delta.reasoning].filter(x=>typeof x==='string').reduce((sum,x)=>sum+x.length,0);
-      const toolChars=(delta.tool_calls??[]).reduce((sum,x)=>sum+(typeof x.function?.arguments==='string'?x.function.arguments.length:0),0);
-      if (chars+toolChars>0) emit({event:'progress',charCount:chars+toolChars});
-      if (choice.finish_reason) emit({event:'finish',reason:['stop','tool_calls','length','content_filter'].includes(choice.finish_reason)?choice.finish_reason:'other'});
+      const toolChars=(delta.tool_calls??[]).reduce((sum,x)=>sum+(typeof x?.function?.arguments==='string'?x.function.arguments.length:0),0);
+      activityChars+=chars+toolChars;pendingChars+=chars+toolChars;
+      // Coalesce metadata, never private text. Heartbeats do not flush progress.
+      if(chars+toolChars>0&&now()-lastProgress>=1000)flushProgress();
+      if (choice.finish_reason){flush();emit({event:'finish',reason:['stop','tool_calls','length','content_filter'].includes(choice.finish_reason)?choice.finish_reason:'other'});}
     }
   }
   return {
     push(chunk) {
       bytes+=chunk.byteLength;
       if(bytes>maxBytes)throw new Error('ZCODE_STREAM_LIMIT');
-      buffer+=decoder.decode(chunk,{stream:true});
+      buffer+=decode(chunk,{stream:true});
       let index;
       while((index=buffer.indexOf('\n'))>=0){line(buffer.slice(0,index).replace(/\r$/,''));buffer=buffer.slice(index+1);}
-      if(buffer.length>1024*1024)throw new Error('ZCODE_STREAM_LINE_LIMIT');
+      if(buffer.length>MAX_LINE_CHARS)throw new Error('ZCODE_STREAM_LINE_LIMIT');
     },
-    finish(){buffer+=decoder.decode();if(buffer.trim())line(buffer);buffer='';},
+    finish(){buffer+=decode();if(buffer.trim())line(buffer);buffer='';flush();},
+    flush,
+    stats:()=>({wireBytes:bytes,dataEvents,activityChars,publicChars}),
   };
+}
+
+// Observe both inspector exceptions and upstream read failures before the CLI
+// can wrap them. Persist only fixed codes/counters; never the original exception.
+function inspectResponseStream(body,emit,options){
+  const inspector=createSseInspector(emit,options),reader=body.getReader();
+  let ended=false;
+  return new ReadableStream({
+    async pull(controller){
+      let reading=true;
+      try{
+        const {value,done}=await reader.read();reading=false;if(ended)return;
+        if(done){inspector.finish();emit({event:'stream_end',outcome:'eof',...inspector.stats()});ended=true;reader.releaseLock();controller.close();return;}
+        inspector.push(value);controller.enqueue(value);
+      }catch(error){
+        if(ended)return;ended=true;
+        const code=reading?'ZCODE_STREAM_INTERRUPTED':STREAM_CODES.has(error?.message)?error.message:'ZCODE_STREAM_FAILURE';
+        try{inspector.flush();emit({event:'stream_error',code,...inspector.stats()});}
+        finally{controller.error(new Error(code));try{await reader.cancel();}catch{}finally{reader.releaseLock();}}
+      }
+    },
+    async cancel(reason){
+      if(ended)return;ended=true;
+      // Consumers may cancel after receiving a valid finish marker. Record the
+      // outcome without treating that alone as a provider or supervisor failure.
+      try{inspector.flush();emit({event:'stream_end',outcome:'cancelled',...inspector.stats()});}
+      finally{try{await reader.cancel(reason);}finally{reader.releaseLock();}}
+    },
+  });
 }
 
 function installGuard(policyPath) {
@@ -93,8 +144,7 @@ function installGuard(policyPath) {
     if(!response.ok)emit({event:'http_error',sessionId:active.sessionId,requestIndex:index,httpStatus:response.status});
     if(!response.ok||!response.body)return response;
     if(!response.headers.get('content-type')?.includes('text/event-stream')){emit({event:'violation',code:'ZCODE_STREAM_TYPE'});throw new Error('ZCode expected a streamed response.');}
-    const inspector=createSseInspector(record=>emit({...record,sessionId:active.sessionId,requestIndex:index}));
-    const body=response.body.pipeThrough(new TransformStream({transform(chunk,controller){inspector.push(chunk);controller.enqueue(chunk);},flush(){inspector.finish();}}));
+    const body=inspectResponseStream(response.body,record=>emit({...record,sessionId:active.sessionId,requestIndex:index}));
     return new Response(body,{status:response.status,statusText:response.statusText,headers:response.headers});
   };
   // The verified transport uses fetch. Refuse proxy/custom-CA paths that would
@@ -106,5 +156,5 @@ function installGuard(policyPath) {
   }
 }
 
-module.exports={ENDPOINT,MODEL,validateWireRequest,createSseInspector,installGuard};
+module.exports={ENDPOINT,MODEL,MAX_STREAM_BYTES,validateWireRequest,createSseInspector,inspectResponseStream,installGuard};
 if(process.env.CODEX_ZCODE_POLICY)installGuard(process.env.CODEX_ZCODE_POLICY);

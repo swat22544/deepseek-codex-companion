@@ -55,7 +55,7 @@ export function apply(ctx) {
     }
     if (Object.keys(MODEL).some(key=>options[key] !== MODEL[key])) {
       emit('violation',{reason:'model_selection_mismatch'});
-      throw new Error('Expected DeepSeek-V41-Flash / Max; no automatic fallback is allowed.');
+      throw new Error('Expected DeepSeek-V4.1-Flash-1017 / Max; no automatic fallback is allowed.');
     }
     emit('model',MODEL);
     return next();

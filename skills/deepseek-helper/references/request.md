@@ -21,9 +21,9 @@
 | 后端 | 固定模型与推理等级 | 本机程序位置 |
 | --- | --- | --- |
 | `harness` | `deepseek-official / deepseek-flash / max` | `DEEPSEEK_HARNESS_HOME` 优先，其次技能目录 `helper.config.json` 的 `installation`，默认 `D:/DeepSeek Harness` |
-| `zcode` | `zai-standard-api / GLM-5.3-Flash / max`，显示为 **GLM-5.3-Flash / Max** | `DEEPSEEK_ZCODE_HOME` 优先，其次 `helper.config.json` 的 `zcodeInstallation`，默认 `D:/Zcode` |
+| `zcode` | `zai-standard-api / GLM-5.3-Flash / high`，显示为 **GLM-5.3-Flash / High** | `DEEPSEEK_ZCODE_HOME` 优先，其次 `helper.config.json` 的 `zcodeInstallation`，默认 `D:/Zcode` |
 
-ZCode 通过本机 CLI 的后台 `app-server` 建立独立受控会话，不依赖桌面窗口保持前台；只向本次会话提供快照 MCP 工具。模型接入使用 `zai-standard-api` 的 Z.ai 标准 API `https://api.z.ai/api/paas/v4`、Chat Completions 协议，固定大小写一致的 `GLM-5.3-Flash` 与最高思考强度 `max`。适配器须核对实际提供方配置与运行证据，不能仅凭界面显示名认定匹配，也不改用 Coding Plan 接口。它复用 ZCode 已配置的认证，不复制密钥到请求、候选目录、监看或发布材料。使用安装器的 `--zcode-home PATH` 保存实际程序目录。
+ZCode 通过本机 CLI 的后台 `app-server` 建立独立受控会话，不依赖桌面窗口保持前台；只向本次会话提供快照 MCP 工具。模型接入使用 `zai-standard-api` 的 Z.ai 标准 API `https://api.z.ai/api/paas/v4`、Chat Completions 协议，固定大小写一致的 `GLM-5.3-Flash` 与高思考强度 `high`。适配器须核对实际提供方配置与运行证据，不能仅凭界面显示名认定匹配，也不改用 Coding Plan 接口。它复用 ZCode 已配置的认证，不复制密钥到请求、候选目录、监看或发布材料。使用安装器的 `--zcode-home PATH` 保存实际程序目录。
 
 `taskType`：`extract`、`classify`、`format`、`draft`、`analyze`、`review`、`debug`、`plan`、`implement`、`test-design`。它描述工作类型，权限仅由 `mode` 决定。`implement` 产生候选实现，不能直接修改项目。
 
@@ -91,3 +91,5 @@ node "<本技能目录>/scripts/delegate-batch.mjs" "D:/project/work/batch.json"
 同一交付物、同一纠错目标默认至多两次反馈续作，每次都是新会话；这是 Skill 的停止条件，运行器没有“整个任务只能调用一次”或“整个对话只有两次”的限制。后续新的实现、测试或需求工作包可以继续由主代理派发，不通过假拆分绕过纠错上限。主代理挑选上轮必要的结论、候选文件和验证失败信息，写入新的 `input/feedback/files`；不自动携带整个会话、不递归委派。发现遗漏可补充新快照，但每次扩大范围都应由主代理主动决定。
 
 Harness 专用 `codex-helper` profile 只允许已知的 base/headless 组合及空用户补丁。不要往此 profile 安装桌面插件；普通桌面插件继续保留在 `desktop`。如果专用 profile 被改动，或 DSH 主目录出现非空的全局 `cordis.patch.yml`，脚本拒绝调用，主代理检查原因后再修复。ZCode 也必须经本适配器的受限工具与模型核验，不用普通桌面会话或直接 CLI 命令绕开控制。任一路认证、工具或模型检查失败时先诊断，不静默转往另一个后端。
+
+当前模型设置（2026-10-25）：官方 `deepseek-flash` 别名服务 DeepSeek-V4.1-Flash-1017（[官方更新说明](https://api-docs.deepseek.com/updates/#deepseek-v41-flash-1017-update)）；ZCode 从 `max` 下调一档为 `high`。调用前后仍核验实际会话与请求，监看中的历史 `max` 记录保留原始档位。

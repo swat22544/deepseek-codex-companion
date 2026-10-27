@@ -6,7 +6,9 @@ const idPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 const safeBackend=value=>value===undefined||value==='harness'?'harness':value==='zcode'?'zcode':null;
 function safeModel(value,backend){
   const model=backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash';
-  return value?.model===model&&value?.reasoningEffort==='max'?{model,reasoningEffort:'max'}:null;
+  const reasoningEffort=value?.reasoningEffort;
+  const validEffort=reasoningEffort==='max'||(backend==='zcode'&&reasoningEffort==='high');
+  return value?.model===model&&validEffort?{model,reasoningEffort}:null;
 }
 const validTimestamp=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&Number.isFinite(Date.parse(value));
 export async function getRun(id,root=dataRoot){
@@ -54,11 +56,11 @@ function safeTimeout(value){
   }
   return out;
 }
-const errorTypes=new Set(['unknown','aborted','permission.rejected','tool.execution','provider.rate-limit','provider.auth','provider.quota','provider.content-filter','provider.transport','provider.internal','provider.invalid-output','provider.invalid-request','provider.unsupported-operation','provider.no-route','provider.unknown','provider.timeout']);
-const errorReasons=new Set(['connection_reset','connection_refused','dns_failure','tls_failure','stream_interrupted','request_timeout','rate_limited','quota_exceeded','context_length_exceeded','missing_reasoning_content','invalid_tool_call','invalid_api_key','permission_denied','cancelled','provider_unavailable']);
+const errorTypes=new Set(['unknown','aborted','permission.rejected','tool.execution','provider.rate-limit','provider.auth','provider.quota','provider.content-filter','provider.transport','provider.internal','provider.invalid-output','provider.invalid-request','provider.unsupported-operation','provider.no-route','provider.unknown','provider.timeout','supervisor.output-limit','supervisor.invalid-stream']);
+const errorReasons=new Set(['connection_reset','connection_refused','dns_failure','tls_failure','stream_interrupted','request_timeout','rate_limited','quota_exceeded','context_length_exceeded','missing_reasoning_content','invalid_tool_call','invalid_api_key','permission_denied','cancelled','provider_unavailable','stream_size_limit','stream_line_limit','public_output_limit','protocol_size_limit','invalid_stream','invalid_stream_utf8','stream_processing_failed']);
 const recoveryStatuses=new Set(['not_needed','skipped','recovered','unavailable','failed','timed_out']);
 function safeErrorDetails(value){
-  if(!value||typeof value!=='object'||Array.isArray(value)||!['cli','http','session'].includes(value.source))return null;
+  if(!value||typeof value!=='object'||Array.isArray(value)||!['cli','http','session','guard'].includes(value.source))return null;
   return {type:errorTypes.has(value.type)?value.type:'unknown',httpStatus:Number.isInteger(value.httpStatus)&&value.httpStatus>=100&&value.httpStatus<=599?value.httpStatus:null,source:value.source,reason:errorReasons.has(value.reason)?value.reason:null};
 }
 function safeErrorEvidence(value){

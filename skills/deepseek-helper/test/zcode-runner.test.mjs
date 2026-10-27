@@ -10,14 +10,14 @@ import {buildZCodeConfig,verifyZCodeSnapshot,zcodeToolNames,createZCodeClient,ZC
 const require=createRequire(import.meta.url);
 const {ENDPOINT,validateWireRequest,createSseInspector}=require('../scripts/zcode-guard.cjs');
 const policy={sessionId:'sess_test',allowedTools:[]};
-const body=()=>({model:'GLM-5.3-Flash',reasoning_effort:'max',thinking:{type:'enabled'},enable_thinking:true,reasoning:{effort:'max'},stream:true,messages:[{role:'user',content:'supplied task'}]});
+const body=()=>({model:'GLM-5.3-Flash',reasoning_effort:'high',thinking:{type:'enabled'},enable_thinking:true,reasoning:{effort:'high'},stream:true,messages:[{role:'user',content:'supplied task'}]});
 const validate=(value,options={})=>validateWireRequest(options.url??ENDPOINT,{method:'POST',body:JSON.stringify(value),...options.init},options.policy??policy);
-const snapshot=()=>({session:{sessionId:'sess_test'},projection:{sessionId:'sess_test',status:'idle',turnCount:1,activeToolCalls:[],pendingPermissions:[]},settings:{model:{current:{providerId:'zai-standard-api',modelId:'GLM-5.3-Flash',options:{reasoningLevel:'max'}}},thoughtLevel:{current:'max',available:[{value:'low'},{value:'high'},{value:'max'}]}}});
+const snapshot=()=>({session:{sessionId:'sess_test'},projection:{sessionId:'sess_test',status:'idle',turnCount:1,activeToolCalls:[],pendingPermissions:[]},settings:{model:{current:{providerId:'zai-standard-api',modelId:'GLM-5.3-Flash',options:{reasoningLevel:'high'}}},thoughtLevel:{current:'high',available:[{value:'low'},{value:'high'},{value:'max'}]}}});
 
-test('ZCode exact standard API model and maximum effort are independently fixed',()=>{
-  assert.deepEqual(ZCODE_MODEL,{provider:'zai-standard-api',model:'GLM-5.3-Flash',reasoningEffort:'max'});
-  assert.deepEqual(validate(body()),{model:'GLM-5.3-Flash',reasoningEffort:'max',tools:[]});
-  for(const mutation of [b=>b.model='GLM-5.3',b=>b.model='glm-5.3-flash',b=>b.reasoning_effort='high',b=>b.thinking.type='disabled',b=>b.enable_thinking=false,b=>delete b.reasoning,b=>b.stream=false]){
+test('ZCode exact standard API model and configured high effort are independently fixed',()=>{
+  assert.deepEqual(ZCODE_MODEL,{provider:'zai-standard-api',model:'GLM-5.3-Flash',reasoningEffort:'high'});
+  assert.deepEqual(validate(body()),{model:'GLM-5.3-Flash',reasoningEffort:'high',tools:[]});
+  for(const mutation of [b=>b.model='GLM-5.3',b=>b.model='glm-5.3-flash',b=>b.reasoning_effort='max',b=>b.reasoning_effort='low',b=>b.reasoning.effort='max',b=>b.thinking.type='disabled',b=>b.enable_thinking=false,b=>delete b.reasoning,b=>b.stream=false]){
     const candidate=body();mutation(candidate);assert.throws(()=>validate(candidate),/MODEL_MISMATCH/);
   }
 });
@@ -61,7 +61,7 @@ test('snapshot verification separates pre-input placeholder from completed ident
   const initial=snapshot();initial.projection.sessionId='unknown';initial.projection.turnCount=0;
   assert.equal(verifyZCodeSnapshot(initial,'sess_test'),true);
   assert.throws(()=>verifyZCodeSnapshot(initial,'sess_test',{completed:true}),/evidence mismatch/);
-  for(const mutation of [s=>s.settings.model.current.providerId='zai-api',s=>s.settings.model.current.modelId='GLM-5.3',s=>s.settings.model.current.options.reasoningLevel='high',s=>s.settings.thoughtLevel.current='high',s=>s.projection.sessionId='sess_other']){
+  for(const mutation of [s=>s.settings.model.current.providerId='zai-api',s=>s.settings.model.current.modelId='GLM-5.3',s=>s.settings.model.current.options.reasoningLevel='max',s=>s.settings.model.current.options.reasoningLevel='low',s=>s.settings.thoughtLevel.current='max',s=>s.projection.sessionId='sess_other']){
     const candidate=snapshot();mutation(candidate);assert.throws(()=>verifyZCodeSnapshot(candidate,'sess_test'),/evidence mismatch/);
   }
 });

@@ -10,7 +10,7 @@
 
 调用成功、监看面板显示完成、JSON 能解析，都不等于业务正确。监看记录可能滞后，以本次结果 JSON 为调用依据。失败调用中的部分产物也不是完整交付。
 
-双后端时，先对应每条请求的 `backend`、结果、会话、快照和候选，分别验收。ZCode 还需实际运行证据 `runtimeEvidenceVerified: true`，确认本次为 `zai-standard-api / GLM-5.3-Flash / max`；固定模型名称和请求配置本身不能证明调用真的使用了它。旧 Harness 评估只覆盖当时的 DeepSeek／Harness 组合，不证明 GLM 的一般能力或 ZCode 工具链已经验收。两路相互赞同、同题得到相同输出也不替代独立判定。
+双后端时，先对应每条请求的 `backend`、结果、会话、快照和候选，分别验收。ZCode 还需实际运行证据 `runtimeEvidenceVerified: true`，确认本次为 `zai-standard-api / GLM-5.3-Flash / high`；固定模型名称和请求配置本身不能证明调用真的使用了它。旧 Harness 评估只覆盖当时的 DeepSeek／Harness 组合，不证明 GLM 的一般能力或 ZCode 工具链已经验收。两路相互赞同、同题得到相同输出也不替代独立判定。
 
 **候选代码、解释文字、源码引用、边界示例和测试预期分别核验。不能因主要结论正确，默认附加内容也正确。** 附加错误不必抹去已验证的有效部分，但需剔除或纠正后再使用。
 

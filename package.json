@@ -1,6 +1,6 @@
 {
   "name": "deepseek-codex-companion",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "Supervised DeepSeek and GLM collaboration with parallel dispatch and a live monitor for Codex on Windows.",
   "type": "module",

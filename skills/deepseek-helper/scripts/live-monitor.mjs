@@ -21,11 +21,11 @@ function safeTimeout(value) {
     if(typeof value[key]==='number'&&Number.isFinite(value[key])&&value[key]>=0)out[key]=value[key];
   return out;
 }
-const errorTypes=new Set(['unknown','aborted','permission.rejected','tool.execution','provider.rate-limit','provider.auth','provider.quota','provider.content-filter','provider.transport','provider.internal','provider.invalid-output','provider.invalid-request','provider.unsupported-operation','provider.no-route','provider.unknown','provider.timeout']);
-const errorReasons=new Set(['connection_reset','connection_refused','dns_failure','tls_failure','stream_interrupted','request_timeout','rate_limited','quota_exceeded','context_length_exceeded','missing_reasoning_content','invalid_tool_call','invalid_api_key','permission_denied','cancelled','provider_unavailable']);
+const errorTypes=new Set(['unknown','aborted','permission.rejected','tool.execution','provider.rate-limit','provider.auth','provider.quota','provider.content-filter','provider.transport','provider.internal','provider.invalid-output','provider.invalid-request','provider.unsupported-operation','provider.no-route','provider.unknown','provider.timeout','supervisor.output-limit','supervisor.invalid-stream']);
+const errorReasons=new Set(['connection_reset','connection_refused','dns_failure','tls_failure','stream_interrupted','request_timeout','rate_limited','quota_exceeded','context_length_exceeded','missing_reasoning_content','invalid_tool_call','invalid_api_key','permission_denied','cancelled','provider_unavailable','stream_size_limit','stream_line_limit','public_output_limit','protocol_size_limit','invalid_stream','invalid_stream_utf8','stream_processing_failed']);
 const recoveryStatuses=new Set(['not_needed','skipped','recovered','unavailable','failed','timed_out']);
 function safeErrorDetails(value) {
-  if(!value||typeof value!=='object'||Array.isArray(value)||!['cli','http','session'].includes(value.source))return null;
+  if(!value||typeof value!=='object'||Array.isArray(value)||!['cli','http','session','guard'].includes(value.source))return null;
   return {type:errorTypes.has(value.type)?value.type:'unknown',httpStatus:Number.isInteger(value.httpStatus)&&value.httpStatus>=100&&value.httpStatus<=599?value.httpStatus:null,source:value.source,reason:errorReasons.has(value.reason)?value.reason:null};
 }
 function safeErrorEvidence(value) {
@@ -47,8 +47,9 @@ export async function createMonitor(request, {directory,io={},sleep=delay,heartb
   if(!['harness','zcode'].includes(backend))throw new Error('Unsupported monitor backend');
   const backendLabel=backend==='zcode'?'ZCode':'Harness';
   const model=backend==='zcode'?'GLM-5.3-Flash':'deepseek-flash';
-  const modelLabel=backend==='zcode'?'GLM-5.3-Flash':'DeepSeek-V41-Flash';
-  const state={version:1,id,title,backend,taskType:request?.taskType,mode:request?.mode??'text',status:'preparing',startedAt:new Date(start).toISOString(),updatedAt:new Date(start).toISOString(),elapsedMs:0,model:{model,reasoningEffort:'max'},policyActive:false,modelSelectionVerified:false,reply:'',draft:'',events:[],artifacts:[],error:null,errorDetails:null,errorEvidence:[],diagnosticRecovery:null,timing:null,timeout:null,done:false};
+  const modelLabel=backend==='zcode'?'GLM-5.3-Flash':'DeepSeek-V4.1-Flash-1017';
+  const reasoningEffort=backend==='zcode'?'high':'max',effortLabel=backend==='zcode'?'High':'Max';
+  const state={version:1,id,title,backend,taskType:request?.taskType,mode:request?.mode??'text',status:'preparing',startedAt:new Date(start).toISOString(),updatedAt:new Date(start).toISOString(),elapsedMs:0,model:{model,reasoningEffort},policyActive:false,modelSelectionVerified:false,reply:'',draft:'',events:[],artifacts:[],error:null,errorDetails:null,errorEvidence:[],diagnosticRecovery:null,timing:null,timeout:null,done:false};
   const fileIO={mkdir,writeFile,rename,...io};
   const retryDelays=[40,120,300];
   const transientCodes=new Set(['EACCES','EPERM','EBUSY','EMFILE','ENFILE','EINTR','ETXTBSY','ENOENT']);
@@ -123,7 +124,7 @@ export async function createMonitor(request, {directory,io={},sleep=delay,heartb
     control(data){
       if(finished)return;
       if(data.event==='active'){state.policyActive=true;activity('policy','调用权限已确认');}
-      if(data.event==='model'){state.modelSelectionVerified=true;activity('model',`${modelLabel} / Max 已确认 · ${backendLabel}`);}
+      if(data.event==='model'){state.modelSelectionVerified=true;activity('model',`${modelLabel} / ${effortLabel} 已确认 · ${backendLabel}`);}
       if(data.event==='reply_stream'&&!finalSeen){
         if(data.type==='start'){attempt=data.attemptId;blocks=new Map();state.draft='';activity('response','正在生成回复');}
         if(data.type==='text_delta'&&data.attemptId===attempt&&typeof data.text==='string'){

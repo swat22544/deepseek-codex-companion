@@ -21,11 +21,11 @@ test('parallel backends persist separate records and fixed source/model metadata
   }
   const records=await Promise.all(monitors.map(monitor=>getRun(monitor.id,root)));
   for(const [index,record] of records.entries()){
-   const backend=index?'zcode':'harness',label=index?'ZCode':'Harness',model=index?'GLM-5.3-Flash':'deepseek-flash',display=index?'GLM-5.3-Flash':'DeepSeek-V41-Flash';
+   const backend=index?'zcode':'harness',label=index?'ZCode':'Harness',model=index?'GLM-5.3-Flash':'deepseek-flash',display=index?'GLM-5.3-Flash':'DeepSeek-V4.1-Flash-1017';
    assert.equal(record.backend,backend);
-   assert.deepEqual(record.model,{model,reasoningEffort:'max'});
+   assert.deepEqual(record.model,{model,reasoningEffort:index?'high':'max'});
    assert.equal(record.events.find(event=>event.kind==='session').label,`${display} 已启动 · ${label}`);
-   assert.equal(record.events.find(event=>event.kind==='model').label,`${display} / Max 已确认 · ${label}`);
+   assert.equal(record.events.find(event=>event.kind==='model').label,`${display} / ${index?'High':'Max'} 已确认 · ${label}`);
    assert.equal(record.reply,'Reply '+index);
    assert.equal(record.done,true);
    assert.equal(record.modelSelectionVerified,true);

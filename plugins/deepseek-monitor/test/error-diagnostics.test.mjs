@@ -7,6 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {createMonitor} from '../../../skills/deepseek-helper/scripts/live-monitor.mjs';
 import {getRun,listRuns,summary} from '../server/store.mjs';
 import {startServer} from '../server/http.mjs';
+import {ERROR_TYPES,ERROR_REASONS} from '../../../skills/deepseek-helper/scripts/backend-errors.mjs';
 
 const extra={message:'PRIVATE_MESSAGE',headers:{Authorization:'PRIVATE_TOKEN'},body:'PRIVATE_BODY',url:'PRIVATE_URL',path:'PRIVATE_PATH'};
 async function fixture(t){
@@ -42,14 +43,23 @@ test('writer and store normalize unknown diagnostic values without forwarding ra
 });
 
 test('diagnostic projection accepts fixed types/reasons and only valid HTTP integers',()=>{
- const types=['unknown','aborted','permission.rejected','tool.execution','provider.rate-limit','provider.auth','provider.quota','provider.content-filter','provider.transport','provider.internal','provider.invalid-output','provider.invalid-request','provider.unsupported-operation','provider.no-route','provider.unknown','provider.timeout'];
- const reasons=['connection_reset','connection_refused','dns_failure','tls_failure','stream_interrupted','request_timeout','rate_limited','quota_exceeded','context_length_exceeded','missing_reasoning_content','invalid_tool_call','invalid_api_key','permission_denied','cancelled','provider_unavailable'];
+ const types=ERROR_TYPES,reasons=ERROR_REASONS;
  for(const type of types)assert.equal(summary({errorDetails:{...detail,type}}).errorDetails.type,type);
  for(const reason of reasons)assert.equal(summary({errorDetails:{...detail,reason}}).errorDetails.reason,reason);
  for(const httpStatus of [100,400,401,429,500,599])assert.equal(summary({errorDetails:{...detail,httpStatus}}).errorDetails.httpStatus,httpStatus);
  for(const httpStatus of [null,undefined,99,600,400.1,'401',Infinity,{},NaN])assert.equal(summary({errorDetails:{...detail,httpStatus}}).errorDetails.httpStatus,null);
- for(const source of ['cli','http','session'])assert.equal(summary({errorDetails:{...detail,source}}).errorDetails.source,source);
+ for(const source of ['cli','http','session','guard'])assert.equal(summary({errorDetails:{...detail,source}}).errorDetails.source,source);
  for(const source of [undefined,null,'PRIVATE',{},['session']])assert.equal(summary({errorDetails:{...detail,source}}).errorDetails,null);
+});
+
+test('local stream failure survives writer and API projection without exception data',async t=>{
+ const root=await fixture(t),monitor=await createMonitor({backend:'zcode',instruction:'Stream limit fixture'},{directory:join(root,'runs')});
+ const local={type:'supervisor.output-limit',source:'guard',httpStatus:null,reason:'stream_size_limit'};
+ await monitor.finish({ok:false,errorDetails:{...local,...extra},errorEvidence:[{...local,...extra}]});
+ const raw=await readFile(monitor.path,'utf8');assert.equal(raw.includes('PRIVATE'),false);
+ assert.deepEqual(JSON.parse(raw).errorDetails,local);
+ assert.deepEqual((await getRun(monitor.id??JSON.parse(raw).id,root)).errorDetails,local);
+ assert.deepEqual((await listRuns(root))[0].errorEvidence,[local]);
 });
 
 test('diagnostic recovery requires a known status and an actual nonnegative safe count',()=>{

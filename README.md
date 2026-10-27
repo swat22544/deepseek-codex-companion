@@ -11,10 +11,10 @@
 </p>
 
 <p>
-<a href="package.json"><img src="https://img.shields.io/github/package-json/v/swat22544/deepseek-codex-companion?style=flat-square&amp;label=version&amp;color=858BFF&amp;labelColor=171C2B" alt="当前版本 1.4.0" /></a>
+<a href="package.json"><img src="https://img.shields.io/github/package-json/v/swat22544/deepseek-codex-companion?style=flat-square&amp;label=version&amp;color=858BFF&amp;labelColor=171C2B" alt="当前版本 1.4.1" /></a>
 <a href="#环境要求"><img src="https://img.shields.io/badge/platform-Windows-687BBD?style=flat-square&amp;labelColor=171C2B" alt="Windows 本地集成" /></a>
 <a href="#harness-与-zcode-的双路分工"><img src="https://img.shields.io/badge/DeepSeek-Flash%20%2F%20Max-8D79BB?style=flat-square&amp;labelColor=171C2B" alt="DeepSeek Flash / Max" /></a>
-<a href="#harness-与-zcode-的双路分工"><img src="https://img.shields.io/badge/GLM-5.3%20Flash%20%2F%20Max-128577?style=flat-square&amp;labelColor=171C2B" alt="GLM 5.3 Flash / Max" /></a>
+<a href="#harness-与-zcode-的双路分工"><img src="https://img.shields.io/badge/GLM-5.3%20Flash%20%2F%20High-128577?style=flat-square&amp;labelColor=171C2B" alt="GLM 5.3 Flash / High" /></a>
 </p>
 
 <p>
@@ -50,13 +50,13 @@
 </table>
 </div>
 
-<p align="center"><sub>Windows · Node.js ≥ 20 · 版本 1.4.0</sub></p>
+<p align="center"><sub>Windows · Node.js ≥ 20 · 版本 1.4.1</sub></p>
 
 ## 项目概览
 
 `deepseek-helper` Skill 负责受控委派，`deepseek-monitor` 插件负责展示公开回复、工具活动与状态。Codex 决定任务和范围，Harness 中的 DeepSeek 与 ZCode 中的 GLM 提供候选稿，Codex 独立复核后再执行和采纳。
 
-当前版本 **1.4.0**，Skill 修订 **`2026-10-18-dual-dispatch`**。技能名称、插件身份与安装路径保持稳定，便于现有任务 Hook 自动读取新版规则。当前仅提供 Harness 和 ZCode 两个后端。
+当前版本 **1.4.1**，Skill 修订 **`2026-10-25-model-settings`**。技能名称、插件身份与安装路径保持稳定，便于现有任务 Hook 自动读取新版规则。当前仅提供 Harness 和 ZCode 两个后端。
 
 这是 Windows 本地外部代理集成，不是 Codex 原生子代理线程。它不附带模型、账号、密钥或第三方应用程序。
 
@@ -66,8 +66,8 @@
 
 | 后端 | 模型与思考强度 | 调用入口 |
 | --- | --- | --- |
-| `harness` | DeepSeek-V41-Flash / Max；`deepseek-official / deepseek-flash / max` | DeepSeek Harness 后台 CLI |
-| `zcode` | Z.ai API / GLM-5.3-Flash / 最高；`zai-standard-api / GLM-5.3-Flash / max` | ZCode 自带 CLI 的 `app-server --stdio` |
+| `harness` | DeepSeek-V4.1-Flash-1017 / Max；`deepseek-official / deepseek-flash / max` | DeepSeek Harness 后台 CLI |
+| `zcode` | Z.ai API / GLM-5.3-Flash / 高（high）；`zai-standard-api / GLM-5.3-Flash / high` | ZCode 自带 CLI 的 `app-server --stdio` |
 
 ZCode 固定使用标准 Z.ai API：`https://api.z.ai/api/paas/v4`，协议为 Chat Completions。会话模型、思考等级及实际请求分别核验，不根据桌面下拉框推断已经生效，不自动改用 Coding Plan、其他提供方或模型。
 
@@ -201,6 +201,8 @@ node scripts/test.mjs
 ```
 
 测试入口只枚举正式测试目录，避免执行 `work/` 中的候选文件。离线故障注入、Hook 触发、真实模型调用和候选语义验证分别报告，不用其中一项代替另一项。
+
+2026-10-18 的 1.4.1 长响应修复通过 **242/242 离线测试**，包含旧 8 MiB 限额反例、跨限额流式输入、错误诊断全链路与取消竞争；本地模拟不代表真实长连接已经通过服务端验收。[长任务排查记录](docs/zcode-long-stream-validation-2026-10-18.md)
 
 2026-10-18 的 1.4.0 本地验收：**227/227 离线测试通过**；新版批次入口的 Harness 与 ZCode 真实任务相隔约1毫秒启动、分别完成并通过机械核验；运行中取消测试确认两路进程树清理完成。交付语义另行核验：审查结论已复现；测试候选的一个异常输入边界不符合契约，未原样采用。浏览器检查覆盖双路筛选、空结果、键盘页签、深浅主题和320–1280像素布局，未做真实手机验收。[双路调度与面板验证记录](docs/dual-dispatch-validation-2026-10-18.md)
 

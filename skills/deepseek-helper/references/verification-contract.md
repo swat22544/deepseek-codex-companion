@@ -11,7 +11,7 @@ node scripts/verify-result.mjs result.json --contract expected.json
 
 ## 独立的判定层
 
-- `protocol.ok`：记录中的 `ok`、守卫激活、模型核验、实际请求次数、固定模型、退出码、完成原因、清理状态、会话与最终回复、工具调用配对都通过。Harness 固定 `deepseek-official / deepseek-flash / max`；ZCode 固定 `zai-standard-api / GLM-5.3-Flash / max`，还要求 `runtimeEvidenceVerified: true`。旧记录没有 `backend` 时按 Harness 检查，显式不支持的后端应拒绝。记录本身未经此工具真实性鉴定；它不能替代运行时守卫。
+- `protocol.ok`：记录中的 `ok`、守卫激活、模型核验、实际请求次数、固定模型、退出码、完成原因、清理状态、会话与最终回复、工具调用配对都通过。Harness 固定 `deepseek-official / deepseek-flash / max`；ZCode 固定 `zai-standard-api / GLM-5.3-Flash / high`，还要求 `runtimeEvidenceVerified: true`。旧记录没有 `backend` 时按 Harness 检查，显式不支持的后端应拒绝。记录本身未经此工具真实性鉴定；它不能替代运行时守卫。
 - `tools.ok`：没有记录到 `status: "error"` 的工具结果。工具失败单独列出，即使委派协议正常完成，也使 `mechanicalOk` 为 `false`。主代理检查失败对交付的影响，不能静默忽略。
 - `contract.status`：`not_requested`、`passed`、`failed` 或 `invalid`。没有指定契约时，不检查回复格式与内容。
 - `mechanicalOk`：上述机械检查通过；它始终伴随 `independentReviewRequired: true`、`semanticAcceptance: false` 和 `trust: "unverified_candidate"`。
